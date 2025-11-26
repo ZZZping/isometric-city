@@ -831,7 +831,7 @@ export const Hospital: React.FC<BuildingProps> = ({ size = TILE_WIDTH }) => {
   return (
     <svg width={w} height={totalH} viewBox={`0 0 ${w} ${totalH}`} style={{ display: 'block' }}>
       {/* Ground */}
-      <polygon points={`${w/2},${groundY} ${w},${groundY + h/2} ${w/2},${totalH} 0,${groundY + h/2}`} fill="#4a7c3f" stroke="#2d4a26" strokeWidth={0.5} />
+      <polygon points={`${w/2},${groundY} ${w},${groundY + h/2} ${w/2},${totalH} 0,${groundY + h/2}`} fill="#FFFFFF" stroke="#E0E0E0" strokeWidth={0.5} />
       {/* Building */}
       <IsometricBox w={w * 0.9} h={h * 0.9} depth={buildingH} topColor="#BDBDBD" leftColor="#9E9E9E" rightColor="#E0E0E0" yOffset={0} />
       {/* Red cross */}

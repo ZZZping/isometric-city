@@ -79,7 +79,7 @@ export const TOOL_INFO: Record<Tool, ToolInfo> = {
   zone_dezone: { name: 'De-zone', cost: 0, description: 'Remove zoning' },
   police_station: { name: 'Police', cost: 500, description: 'Increase safety', size: 1 },
   fire_station: { name: 'Fire Station', cost: 500, description: 'Fight fires', size: 1 },
-  hospital: { name: 'Hospital', cost: 1000, description: 'Improve health', size: 1 },
+  hospital: { name: 'Hospital', cost: 1000, description: 'Improve health (2x2)', size: 2 },
   school: { name: 'School', cost: 400, description: 'Basic education', size: 1 },
   university: { name: 'University', cost: 2000, description: 'Higher education (3x2)', size: 3 },
   park: { name: 'Park', cost: 150, description: 'Boost happiness and land value', size: 1 },

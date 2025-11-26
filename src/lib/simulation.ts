@@ -1031,6 +1031,7 @@ export function simulateTick(state: GameState): GameState {
 // Building sizes for multi-tile buildings (width x height)
 const BUILDING_SIZES: Partial<Record<BuildingType, { width: number; height: number }>> = {
   power_plant: { width: 2, height: 2 },
+  hospital: { width: 2, height: 2 },
   stadium: { width: 3, height: 3 },
   university: { width: 3, height: 2 },
   airport: { width: 4, height: 4 },
