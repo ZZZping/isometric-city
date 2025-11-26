@@ -1465,7 +1465,9 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile }: {
       // For multi-tile buildings, draw higher (lower Y) so it appears above all tiles
       // The frontmost tile is drawn last, so we position relative to it
       const baseY = isMultiTile ? drawPosY : y;
-      const drawY = baseY - imgSize + h + imgSize * 0.15;
+      const footprintDepth = isMultiTile ? buildingSize.width + buildingSize.height - 2 : 0;
+      const verticalLift = footprintDepth > 0 ? footprintDepth * h * 0.3 : 0;
+      const drawY = baseY - imgSize + h + imgSize * 0.1 - verticalLift;
       
       // Draw with crisp rendering
       ctx.drawImage(
