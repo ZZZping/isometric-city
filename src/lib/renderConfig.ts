@@ -92,9 +92,10 @@ const SPRITE_PACK_RED: SpritePack = {
     tennis: 0.10,
     water_tower: -0.30,
     airport: -0.8,
+    university: -0.3,
   },
   horizontalOffsets: {
-    university: -0.6,
+    university: 0.3,
   },
   buildingToSprite: {
     // Residential buildings
@@ -288,9 +289,10 @@ const SPRITE_PACK_SPRITES4_BG: SpritePack = {
     tennis: 0.10,
     water_tower: -0.30,
     airport: -0.8,
+    university: -0.3,
   },
   horizontalOffsets: {
-    university: -0.6,
+    university: 0.3,
   },
   buildingToSprite: {
     house_small: 'house_small',
