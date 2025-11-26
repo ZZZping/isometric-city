@@ -1892,7 +1892,11 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile }: {
     
     if (buildingType === 'house_medium') {
       imageSrc = BUILDING_IMAGES.house_medium;
-    } else if (['house_small', 'apartment_low', 'apartment_high', 'mansion'].includes(buildingType)) {
+      sizeMultiplier = 1.26; // Scaled down 30% from 1.8
+    } else if (buildingType === 'house_small') {
+      imageSrc = BUILDING_IMAGES.residential;
+      sizeMultiplier = 1.26; // Scaled down 30% from 1.8
+    } else if (['apartment_low', 'apartment_high', 'mansion'].includes(buildingType)) {
       imageSrc = BUILDING_IMAGES.residential;
     } else if (['shop_small', 'shop_medium', 'office_low', 'office_high', 'mall'].includes(buildingType)) {
       imageSrc = BUILDING_IMAGES.commercial;

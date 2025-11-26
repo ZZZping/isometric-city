@@ -620,9 +620,9 @@ function calculateStats(grid: Tile[][], size: number, budget: Budget, taxRate: n
 
   // Calculate demand
   const jobsRatio = jobs > 0 ? population / jobs : 2;
-  const residentialDemand = Math.min(100, Math.max(-100, (jobs - population * 0.7) / 12));
-  const commercialDemand = Math.min(100, Math.max(-100, (population * 0.3 - jobs * 0.3) / 5));
-  const industrialDemand = Math.min(100, Math.max(-100, (population * 0.2 - jobs * 0.4) / 5));
+  const residentialDemand = Math.min(100, Math.max(-100, (jobs - population * 0.7) / 18));
+  const commercialDemand = Math.min(100, Math.max(-100, (population * 0.3 - jobs * 0.3) / 6));
+  const industrialDemand = Math.min(100, Math.max(-100, (population * 0.2 - jobs * 0.4) / 3.5));
 
   // Calculate income and expenses
   const income = Math.floor(population * taxRate * 0.1 + jobs * taxRate * 0.05);
