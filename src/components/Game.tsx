@@ -1911,7 +1911,7 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile }: {
       else if (buildingType === 'university') sizeMultiplier = 2.8;
       else if (buildingType === 'hospital') sizeMultiplier = 2.25; // 2x2 building
       else if (buildingType === 'school') sizeMultiplier = 2.25; // 2x2 building
-      else if (buildingType === 'fire_station') sizeMultiplier = 1.118; // Scaled down 8% from 1.215
+      else if (buildingType === 'fire_station') sizeMultiplier = 1.006; // Scaled down 10% from 1.118
       else if (buildingType === 'police_station') sizeMultiplier = 1.35; // Scaled down 25% from 1.8
       else if (buildingType === 'park') sizeMultiplier = 1.134; // Scaled down 40% total (30% + 10%) from 1.8
     }
