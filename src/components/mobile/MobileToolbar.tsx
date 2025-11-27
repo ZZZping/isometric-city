@@ -13,70 +13,8 @@ import {
   TreeIcon,
   PowerIcon,
   WaterIcon,
-  BudgetIcon,
-  ChartIcon,
-  AdvisorIcon,
   TrophyIcon,
-  SettingsIcon,
 } from '@/components/ui/Icons';
-
-// Tool category icons
-const CategoryIcons: Record<string, React.ReactNode> = {
-  'TOOLS': (
-    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
-    </svg>
-  ),
-  'ZONES': (
-    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <rect x="3" y="3" width="7" height="7" />
-      <rect x="14" y="3" width="7" height="7" />
-      <rect x="14" y="14" width="7" height="7" />
-      <rect x="3" y="14" width="7" height="7" />
-    </svg>
-  ),
-  'SERVICES': (
-    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M3 21h18" />
-      <path d="M5 21V7l8-4v18" />
-      <path d="M19 21V11l-6-4" />
-      <path d="M9 9v.01" />
-      <path d="M9 12v.01" />
-      <path d="M9 15v.01" />
-      <path d="M9 18v.01" />
-    </svg>
-  ),
-  'PARKS': <TreeIcon size={20} />,
-  'SPORTS': (
-    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <circle cx="12" cy="12" r="10" />
-      <path d="M12 6v12M6 12h12" />
-    </svg>
-  ),
-  'RECREATION': (
-    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <circle cx="12" cy="12" r="10" />
-      <path d="M8 14s1.5 2 4 2 4-2 4-2" />
-      <line x1="9" y1="9" x2="9.01" y2="9" />
-      <line x1="15" y1="9" x2="15.01" y2="9" />
-    </svg>
-  ),
-  'WATERFRONT': <WaterIcon size={20} />,
-  'COMMUNITY': (
-    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-      <circle cx="9" cy="7" r="4" />
-      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-    </svg>
-  ),
-  'UTILITIES': <PowerIcon size={20} />,
-  'SPECIAL': (
-    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-    </svg>
-  ),
-};
 
 // Tool icons for quick access (Partial because not all tools need custom icons)
 const QuickToolIcons: Partial<Record<Tool, React.ReactNode>> = {
@@ -332,23 +270,75 @@ export function MobileToolbar({ onOpenPanel }: MobileToolbarProps) {
             className="absolute bottom-20 left-2 right-2 max-h-[70vh] overflow-hidden rounded-xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="p-3 border-b border-border flex items-center justify-between">
-              <span className="font-semibold text-sm">Build Menu</span>
-              <span className="text-muted-foreground text-xs font-mono">${stats.money.toLocaleString()}</span>
+            <div className="p-3 border-b border-border">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-sm uppercase tracking-wide">City Management</span>
+                <span className="text-muted-foreground text-xs font-mono">${stats.money.toLocaleString()}</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-3">
+                <Button
+                  variant="secondary"
+                  className="h-10 w-full text-xs font-semibold"
+                  onClick={() => {
+                    onOpenPanel('budget');
+                    setShowMenu(false);
+                  }}
+                >
+                  Budget
+                </Button>
+                <Button
+                  variant="secondary"
+                  className="h-10 w-full text-xs font-semibold"
+                  onClick={() => {
+                    onOpenPanel('statistics');
+                    setShowMenu(false);
+                  }}
+                >
+                  Stats
+                </Button>
+                <Button
+                  variant="secondary"
+                  className="h-10 w-full text-xs font-semibold"
+                  onClick={() => {
+                    onOpenPanel('advisors');
+                    setShowMenu(false);
+                  }}
+                >
+                  Advisors
+                </Button>
+                <Button
+                  variant="secondary"
+                  className="h-10 w-full text-xs font-semibold"
+                  onClick={() => {
+                    onOpenPanel('achievements');
+                    setShowMenu(false);
+                  }}
+                >
+                  Awards
+                </Button>
+                <Button
+                  variant="secondary"
+                  className="h-10 w-full text-xs font-semibold"
+                  onClick={() => {
+                    onOpenPanel('settings');
+                    setShowMenu(false);
+                  }}
+                >
+                  Settings
+                </Button>
+              </div>
             </div>
 
             <ScrollArea className="h-[50vh]">
               <div className="p-2 space-y-1">
-                {/* Category buttons */}
                 {Object.entries(toolCategories).map(([category, tools]) => (
                   <div key={category}>
                     <Button
                       variant={expandedCategory === category ? 'secondary' : 'ghost'}
-                      className="w-full justify-start gap-3 h-12"
+                      className="w-full justify-between h-12 px-4"
                       onClick={() => handleCategoryClick(category)}
                     >
-                      <span className="text-muted-foreground">{CategoryIcons[category]}</span>
-                      <span className="flex-1 text-left font-medium">{category}</span>
+                      <span className="font-medium">{category}</span>
                       <svg
                         className={`w-4 h-4 transition-transform ${expandedCategory === category ? 'rotate-180' : ''}`}
                         viewBox="0 0 24 24"
@@ -360,7 +350,6 @@ export function MobileToolbar({ onOpenPanel }: MobileToolbarProps) {
                       </svg>
                     </Button>
 
-                    {/* Expanded tools */}
                     {expandedCategory === category && (
                       <div className="pl-4 py-1 space-y-0.5">
                         {tools.map((tool) => {
@@ -372,13 +361,10 @@ export function MobileToolbar({ onOpenPanel }: MobileToolbarProps) {
                             <Button
                               key={tool}
                               variant={selectedTool === tool ? 'default' : 'ghost'}
-                              className="w-full justify-start gap-3 h-11"
+                              className="w-full justify-between h-11 px-4"
                               disabled={!canAfford && info.cost > 0}
                               onClick={() => handleToolSelect(tool, true)}
                             >
-                              <span className="text-muted-foreground">
-                                {QuickToolIcons[tool] || <div className="w-5 h-5" />}
-                              </span>
                               <span className="flex-1 text-left">{info.name}</span>
                               {info.cost > 0 && (
                                 <span className={`text-xs font-mono ${canAfford ? 'text-green-400' : 'text-red-400'}`}>
@@ -392,60 +378,6 @@ export function MobileToolbar({ onOpenPanel }: MobileToolbarProps) {
                     )}
                   </div>
                 ))}
-
-                {/* Panels section */}
-                <div className="pt-2 mt-2 border-t border-border">
-                  <div className="text-xs text-muted-foreground uppercase tracking-wider px-3 py-2">
-                    City Management
-                  </div>
-                  <div className="grid grid-cols-5 gap-2 px-2">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-12 w-full flex-col gap-1"
-                      onClick={() => { onOpenPanel('budget'); setShowMenu(false); }}
-                    >
-                      <BudgetIcon size={18} />
-                      <span className="text-[9px]">Budget</span>
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-12 w-full flex-col gap-1"
-                      onClick={() => { onOpenPanel('statistics'); setShowMenu(false); }}
-                    >
-                      <ChartIcon size={18} />
-                      <span className="text-[9px]">Stats</span>
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-12 w-full flex-col gap-1"
-                      onClick={() => { onOpenPanel('advisors'); setShowMenu(false); }}
-                    >
-                      <AdvisorIcon size={18} />
-                      <span className="text-[9px]">Advisors</span>
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-12 w-full flex-col gap-1"
-                      onClick={() => { onOpenPanel('achievements'); setShowMenu(false); }}
-                    >
-                      <TrophyIcon size={18} />
-                      <span className="text-[9px]">Awards</span>
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-12 w-full flex-col gap-1"
-                      onClick={() => { onOpenPanel('settings'); setShowMenu(false); }}
-                    >
-                      <SettingsIcon size={18} />
-                      <span className="text-[9px]">Settings</span>
-                    </Button>
-                  </div>
-                </div>
               </div>
             </ScrollArea>
           </Card>
