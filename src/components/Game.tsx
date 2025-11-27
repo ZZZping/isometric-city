@@ -1895,6 +1895,7 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
   const { state, placeAtTile, connectToCity, currentSpritePack } = useGame();
   const { grid, gridSize, selectedTool, speed, adjacentCities, waterBodies, hour } = state;
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const interactionCanvasRef = useRef<HTMLCanvasElement>(null);
   const carsCanvasRef = useRef<HTMLCanvasElement>(null);
   const lightingCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1903,6 +1904,17 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
   const [isPanning, setIsPanning] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [hoveredTile, setHoveredTile] = useState<{ x: number; y: number } | null>(null);
+  const updateHoveredTile = useCallback((next: { x: number; y: number } | null) => {
+    setHoveredTile((prev) => {
+      if (prev?.x === next?.x && prev?.y === next?.y) {
+        return prev;
+      }
+      if (!prev && !next) {
+        return prev;
+      }
+      return next;
+    });
+  }, []);
   const [zoom, setZoom] = useState(isMobile ? 0.6 : 1);
   const carsRef = useRef<Car[]>([]);
   const carIdRef = useRef(0);
@@ -3822,6 +3834,10 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
           carsCanvasRef.current.style.width = `${rect.width}px`;
           carsCanvasRef.current.style.height = `${rect.height}px`;
         }
+        if (interactionCanvasRef.current) {
+          interactionCanvasRef.current.style.width = `${rect.width}px`;
+          interactionCanvasRef.current.style.height = `${rect.height}px`;
+        }
         if (lightingCanvasRef.current) {
           lightingCanvasRef.current.style.width = `${rect.width}px`;
           lightingCanvasRef.current.style.height = `${rect.height}px`;
@@ -4314,7 +4330,7 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
     }
     
     // Draw isometric tile base
-    function drawIsometricTile(ctx: CanvasRenderingContext2D, x: number, y: number, tile: Tile, highlight: boolean, currentZoom: number, skipGreyBase: boolean = false, skipGreenBase: boolean = false) {
+    function drawIsometricTile(ctx: CanvasRenderingContext2D, x: number, y: number, tile: Tile, currentZoom: number, skipGreyBase: boolean = false, skipGreenBase: boolean = false) {
       const w = TILE_WIDTH;
       const h = TILE_HEIGHT;
       
@@ -4431,23 +4447,6 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
         }
       }
       
-      // Highlight on hover/select (always draw, even if base was skipped)
-      if (highlight) {
-        // Draw a semi-transparent fill for better visibility
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
-        ctx.beginPath();
-        ctx.moveTo(x + w / 2, y);
-        ctx.lineTo(x + w, y + h / 2);
-        ctx.lineTo(x + w / 2, y + h);
-        ctx.lineTo(x, y + h / 2);
-        ctx.closePath();
-        ctx.fill();
-        
-        // Draw white border
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      }
     }
     
     // Draw green base tile for grass/empty tiles (called after water tiles)
@@ -5046,31 +5045,6 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
         }
         
         const tile = grid[y][x];
-        const isHovered = hoveredTile?.x === x && hoveredTile?.y === y;
-        
-        // Check if this tile is selected or part of a selected multi-tile building
-        let isSelected = selectedTile?.x === x && selectedTile?.y === y;
-        if (!isSelected && selectedTile) {
-          // Check if selected tile is a multi-tile building that includes this tile
-          const selectedOrigin = grid[selectedTile.y]?.[selectedTile.x];
-          if (selectedOrigin) {
-            const selectedSize = getBuildingSize(selectedOrigin.building.type);
-            if (selectedSize.width > 1 || selectedSize.height > 1) {
-              // Check if current tile is within the selected building's footprint
-              if (x >= selectedTile.x && x < selectedTile.x + selectedSize.width &&
-                  y >= selectedTile.y && y < selectedTile.y + selectedSize.height) {
-                isSelected = true;
-              }
-            }
-          }
-        }
-        
-        // Check if tile is in drag selection rectangle (only show for zoning tools)
-        const isInDragRect = showsDragGrid && dragStartTile && dragEndTile && 
-          x >= Math.min(dragStartTile.x, dragEndTile.x) &&
-          x <= Math.max(dragStartTile.x, dragEndTile.x) &&
-          y >= Math.min(dragStartTile.y, dragEndTile.y) &&
-          y <= Math.max(dragStartTile.y, dragEndTile.y);
         
         // Check if this tile needs a gray base tile (buildings except parks)
         const isPark = tile.building.type === 'park' || tile.building.type === 'park_large' || tile.building.type === 'tennis' ||
@@ -5093,7 +5067,7 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
                                       (tile.building.type === 'empty' && isPartOfParkBuilding(x, y));
         
         // Draw base tile for all tiles (including water), but skip gray bases for buildings and green bases for grass/empty adjacent to water or parks
-        drawIsometricTile(ctx, screenX, screenY, tile, !!(isHovered || isSelected || isInDragRect), zoom, true, needsGreenBaseOverWater || needsGreenBaseForPark);
+        drawIsometricTile(ctx, screenX, screenY, tile, zoom, true, needsGreenBaseOverWater || needsGreenBaseForPark);
         
         if (needsGreyBase) {
           baseTileQueue.push({ screenX, screenY, tile, depth: x + y });
@@ -5314,7 +5288,119 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
     }
     
     ctx.restore();
-  }, [grid, gridSize, offset, zoom, hoveredTile, selectedTile, overlayMode, imagesLoaded, canvasSize, dragStartTile, dragEndTile, state.services, currentSpritePack, waterBodies, isPartOfMultiTileBuilding, isPartOfParkBuilding, showsDragGrid]);
+  }, [grid, gridSize, offset, zoom, overlayMode, imagesLoaded, canvasSize, state.services, currentSpritePack, waterBodies, isPartOfMultiTileBuilding, isPartOfParkBuilding]);
+  
+  // Draw hover/selection/drag overlays on a lightweight interaction canvas
+  useEffect(() => {
+    const canvas = interactionCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    // Reset any previous transforms before clearing
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    const hasHover = !!hoveredTile;
+    const hasSelection = !!selectedTile;
+    const hasDragRect = !!(isDragging && showsDragGrid && dragStartTile && dragEndTile);
+    
+    if (!hasHover && !hasSelection && !hasDragRect) {
+      return;
+    }
+    
+    const dpr = window.devicePixelRatio || 1;
+    ctx.save();
+    ctx.scale(dpr * zoom, dpr * zoom);
+    ctx.translate(offset.x / zoom, offset.y / zoom);
+    
+    const drawDiamond = (
+      tileX: number,
+      tileY: number,
+      fillStyle: string,
+      strokeStyle: string,
+      lineWidth: number = 2
+    ) => {
+      if (tileX < 0 || tileY < 0 || tileX >= gridSize || tileY >= gridSize) {
+        return;
+      }
+      const { screenX, screenY } = gridToScreen(tileX, tileY, 0, 0);
+      ctx.beginPath();
+      ctx.moveTo(screenX + TILE_WIDTH / 2, screenY);
+      ctx.lineTo(screenX + TILE_WIDTH, screenY + TILE_HEIGHT / 2);
+      ctx.lineTo(screenX + TILE_WIDTH / 2, screenY + TILE_HEIGHT);
+      ctx.lineTo(screenX, screenY + TILE_HEIGHT / 2);
+      ctx.closePath();
+      ctx.fillStyle = fillStyle;
+      ctx.fill();
+      ctx.strokeStyle = strokeStyle;
+      ctx.lineWidth = lineWidth;
+      ctx.stroke();
+    };
+    
+    if (hasDragRect && dragStartTile && dragEndTile) {
+      const minX = Math.max(0, Math.min(dragStartTile.x, dragEndTile.x));
+      const maxX = Math.min(gridSize - 1, Math.max(dragStartTile.x, dragEndTile.x));
+      const minY = Math.max(0, Math.min(dragStartTile.y, dragEndTile.y));
+      const maxY = Math.min(gridSize - 1, Math.max(dragStartTile.y, dragEndTile.y));
+      
+      for (let x = minX; x <= maxX; x++) {
+        for (let y = minY; y <= maxY; y++) {
+          drawDiamond(x, y, 'rgba(255, 255, 255, 0.18)', 'rgba(255, 255, 255, 0.35)', 1.5);
+        }
+      }
+    }
+    
+    if (hasSelection && selectedTile) {
+      const selectedOrigin = grid[selectedTile.y]?.[selectedTile.x];
+      if (selectedOrigin) {
+        const size = getBuildingSize(selectedOrigin.building.type);
+        const width = Math.max(1, size.width);
+        const height = Math.max(1, size.height);
+        for (let dx = 0; dx < width; dx++) {
+          for (let dy = 0; dy < height; dy++) {
+            drawDiamond(
+              selectedTile.x + dx,
+              selectedTile.y + dy,
+              'rgba(255, 255, 255, 0.28)',
+              'rgba(255, 255, 255, 0.9)'
+            );
+          }
+        }
+      } else {
+        drawDiamond(
+          selectedTile.x,
+          selectedTile.y,
+          'rgba(255, 255, 255, 0.28)',
+          'rgba(255, 255, 255, 0.9)'
+        );
+      }
+    }
+    
+    if (hasHover && hoveredTile) {
+      drawDiamond(
+        hoveredTile.x,
+        hoveredTile.y,
+        'rgba(255, 255, 255, 0.22)',
+        'rgba(255, 255, 255, 1)'
+      );
+    }
+    
+    ctx.restore();
+  }, [
+    hoveredTile,
+    selectedTile,
+    dragStartTile,
+    dragEndTile,
+    showsDragGrid,
+    isDragging,
+    offset,
+    zoom,
+    gridSize,
+    canvasSize.width,
+    canvasSize.height,
+    grid
+  ]);
   
   // Animate decorative car traffic AND emergency vehicles on top of the base canvas
   useEffect(() => {
@@ -5738,7 +5824,7 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
       const { gridX, gridY } = screenToGrid(mouseX, mouseY, offset.x / zoom, offset.y / zoom);
       
       if (gridX >= 0 && gridX < gridSize && gridY >= 0 && gridY < gridSize) {
-        setHoveredTile({ x: gridX, y: gridY });
+        updateHoveredTile({ x: gridX, y: gridY });
         
         // Update drag rectangle end point for zoning tools
         if (isDragging && showsDragGrid && dragStartTile) {
@@ -5788,9 +5874,11 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
         else if (isDragging && supportsDragPlace && dragStartTile) {
           placeAtTile(gridX, gridY);
         }
+      } else {
+        updateHoveredTile(null);
       }
     }
-  }, [isPanning, dragStart, offset, zoom, gridSize, isDragging, showsDragGrid, dragStartTile, selectedTool, roadDrawDirection, supportsDragPlace, placeAtTile, clampOffset]);
+  }, [isPanning, dragStart, offset, zoom, gridSize, isDragging, showsDragGrid, dragStartTile, selectedTool, roadDrawDirection, supportsDragPlace, placeAtTile, clampOffset, updateHoveredTile]);
   
   const handleMouseUp = useCallback(() => {
     // Check for road connection when dragging off edge
@@ -5840,11 +5928,12 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
     setRoadDrawDirection(null);
     placedRoadTilesRef.current.clear();
     
-    // Clear hovered tile when mouse leaves
-    if (!containerRef.current) {
-      setHoveredTile(null);
-    }
-  }, [isDragging, gridSize, showsDragGrid, supportsDragPlace, dragStartTile, placeAtTile, selectedTool, dragEndTile, adjacentCities]);
+  }, [isDragging, gridSize, showsDragGrid, dragStartTile, placeAtTile, selectedTool, dragEndTile, adjacentCities]);
+  
+  const handleMouseLeave = useCallback(() => {
+    handleMouseUp();
+    updateHoveredTile(null);
+  }, [handleMouseUp, updateHoveredTile]);
   
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
@@ -6020,7 +6109,7 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
+      onMouseLeave={handleMouseLeave}
       onWheel={handleWheel}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
@@ -6032,6 +6121,12 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
         width={canvasSize.width}
         height={canvasSize.height}
         className="absolute top-0 left-0"
+      />
+      <canvas
+        ref={interactionCanvasRef}
+        width={canvasSize.width}
+        height={canvasSize.height}
+        className="absolute top-0 left-0 pointer-events-none"
       />
       <canvas
         ref={carsCanvasRef}
