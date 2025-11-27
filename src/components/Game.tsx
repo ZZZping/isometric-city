@@ -1611,12 +1611,44 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 }
 
 // Canvas-based Isometric Grid - HIGH PERFORMANCE
+// City Connection Dialog Component
+function CityConnectionDialog({ 
+  city, 
+  onConnect, 
+  onCancel 
+}: { 
+  city: { id: string; name: string; direction: string }; 
+  onConnect: (cityId: string) => void; 
+  onCancel: () => void;
+}) {
+  return (
+    <Dialog open={true} onOpenChange={onCancel}>
+      <DialogContent className="max-w-[400px]">
+        <DialogHeader>
+          <DialogTitle>Connect to {city.name}</DialogTitle>
+          <DialogDescription>
+            Connect a road to {city.name} to enable trade and increase your city's income.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex gap-2 justify-end mt-4">
+          <Button variant="outline" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button onClick={() => onConnect(city.id)}>
+            Connect
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile }: { 
   overlayMode: OverlayMode; 
   selectedTile: { x: number; y: number } | null; 
   setSelectedTile: (tile: { x: number; y: number } | null) => void;
 }) {
-  const { state, placeAtTile, currentSpritePack } = useGame();
+  const { state, placeAtTile, currentSpritePack, connectCity } = useGame();
   const { grid, gridSize, selectedTool, speed } = state;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const carsCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -1647,6 +1679,8 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile }: {
   const [canvasSize, setCanvasSize] = useState({ width: 1200, height: 800 });
   const [dragStartTile, setDragStartTile] = useState<{ x: number; y: number } | null>(null);
   const [dragEndTile, setDragEndTile] = useState<{ x: number; y: number } | null>(null);
+  const [showCityConnectionDialog, setShowCityConnectionDialog] = useState(false);
+  const [connectionCity, setConnectionCity] = useState<{ id: string; name: string; direction: string } | null>(null);
   const keysPressedRef = useRef<Set<string>>(new Set());
 
   // Only zoning tools show the grid/rectangle selection visualization
@@ -2652,6 +2686,39 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile }: {
       .forEach(({ tile, screenX, screenY }) => {
         drawBuilding(ctx, screenX, screenY, tile);
       });
+    
+    // Draw water body names
+    if (state.waterBodies && state.waterBodies.length > 0) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+      const fontSize = Math.max(10, 12 / zoom);
+      ctx.font = `${fontSize}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      
+      for (const waterBody of state.waterBodies) {
+        if (waterBody.tiles.length === 0) continue;
+        
+        // Convert grid coordinates to screen coordinates for the center
+        const { screenX: centerScreenX, screenY: centerScreenY } = gridToScreen(
+          waterBody.centerX, 
+          waterBody.centerY, 
+          offset.x, 
+          offset.y
+        );
+        
+        // Only draw if visible on screen
+        if (centerScreenX >= -100 && centerScreenX <= canvasSize.width + 100 &&
+            centerScreenY >= -100 && centerScreenY <= canvasSize.height + 100) {
+          // Draw text with a subtle shadow for readability
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+          ctx.shadowBlur = 2;
+          ctx.fillText(waterBody.name, centerScreenX, centerScreenY);
+          ctx.shadowBlur = 0;
+        }
+      }
+      ctx.restore();
+    }
     
     // Draw overlays last so they remain visible on top of buildings
     overlayQueue.forEach(({ tile, screenX, screenY }) => {
@@ -3782,9 +3849,28 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile }: {
         }
       } else {
         setHoveredTile(null);
+        
+        // Check if dragging a road off the map - show city connection dialog
+        if (isDragging && selectedTool === 'road' && dragStartTile && state.adjacentCities.length > 0) {
+          // Determine which direction we're dragging off
+          let direction: 'north' | 'south' | 'east' | 'west' | null = null;
+          if (gridY < 0) direction = 'north';
+          else if (gridY >= gridSize) direction = 'south';
+          else if (gridX < 0) direction = 'east';
+          else if (gridX >= gridSize) direction = 'west';
+          
+          if (direction) {
+            // Find a city in this direction
+            const city = state.adjacentCities.find(c => c.direction === direction && !c.connected);
+            if (city) {
+              setConnectionCity({ id: city.id, name: city.name, direction });
+              setShowCityConnectionDialog(true);
+            }
+          }
+        }
       }
     }
-  }, [isPanning, isDragging, dragStart, offset, gridSize, zoom, showsDragGrid, supportsDragPlace, dragStartTile, lastPlacedTile, placeAtTile]);
+  }, [isPanning, isDragging, dragStart, offset, gridSize, zoom, showsDragGrid, supportsDragPlace, dragStartTile, lastPlacedTile, placeAtTile, selectedTool, state.adjacentCities]);
   
   const handleMouseUp = useCallback(() => {
     // Fill the drag rectangle when mouse is released (only for zoning tools)
@@ -3866,6 +3952,24 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile }: {
             </>
           )}
         </div>
+      )}
+      
+      {showCityConnectionDialog && connectionCity && (
+        <CityConnectionDialog
+          city={connectionCity}
+          onConnect={(cityId) => {
+            connectCity(cityId);
+            setShowCityConnectionDialog(false);
+            setConnectionCity(null);
+            setIsDragging(false);
+            setDragStartTile(null);
+            setDragEndTile(null);
+          }}
+          onCancel={() => {
+            setShowCityConnectionDialog(false);
+            setConnectionCity(null);
+          }}
+        />
       )}
       
     </div>
