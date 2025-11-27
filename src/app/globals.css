@@ -72,6 +72,15 @@
   background: linear-gradient(180deg, hsl(210 60% 60%) 0%, hsl(210 60% 40%) 100%);
 }
 
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 /* Art Deco Animations */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(10px); }

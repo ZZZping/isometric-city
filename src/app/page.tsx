@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, startTransition } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { GameProvider } from '@/context/GameContext';
 import Game from '@/components/Game';
@@ -44,14 +45,18 @@ function hasSavedGame(): boolean {
 export default function HomePage() {
   const [showGame, setShowGame] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
+  const searchParams = useSearchParams();
+  const shouldAutoStart = searchParams?.get('view') === 'game';
 
   // Check for saved game after mount (client-side only)
   useEffect(() => {
-    setIsChecking(false);
-    if (hasSavedGame()) {
-      setShowGame(true);
-    }
-  }, []);
+    startTransition(() => {
+      if (shouldAutoStart || hasSavedGame()) {
+        setShowGame(true);
+      }
+      setIsChecking(false);
+    });
+  }, [shouldAutoStart]);
 
   if (isChecking) {
     return (
@@ -64,7 +69,7 @@ export default function HomePage() {
   if (showGame) {
     return (
       <GameProvider>
-        <main className="h-screen w-screen overflow-hidden">
+        <main className="h-screen w-screen overflow-y-auto overflow-x-hidden lg:overflow-hidden">
           <Game />
         </main>
       </GameProvider>
@@ -72,26 +77,29 @@ export default function HomePage() {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center p-8">
-      <div className="max-w-7xl w-full grid lg:grid-cols-2 gap-16 items-center">
-        
-        {/* Left - Title and Start Button */}
-        <div className="flex flex-col items-center lg:items-start justify-center space-y-12">
-          <h1 className="text-8xl font-light tracking-wider text-white/90">
+    <main className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center px-4 py-12 sm:p-8">
+      <div className="max-w-6xl w-full grid gap-12 lg:grid-cols-2 lg:gap-16 items-center">
+        {/* Left - Title, Copy and Start Button */}
+        <div className="flex flex-col items-center lg:items-start justify-center space-y-8 text-center lg:text-left">
+          <h1 className="text-4xl sm:text-5xl lg:text-8xl font-light tracking-wider text-white/90 leading-tight">
             IsoCity
           </h1>
-          <Button 
+          <p className="text-base sm:text-lg text-white/70 max-w-xl">
+            Design, balance, and nurture your dream metropolis from any device. Optimized
+            touch controls ensure you can keep building while you&apos;re on the go.
+          </p>
+          <Button
             onClick={() => setShowGame(true)}
-            className="px-12 py-8 text-2xl font-light tracking-wide bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-none transition-all duration-300"
+            className="w-full sm:w-auto px-8 sm:px-12 py-4 sm:py-6 text-lg sm:text-2xl font-light tracking-wide bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-none transition-all duration-300"
           >
             Start
           </Button>
         </div>
 
         {/* Right - Building Gallery */}
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
           {BUILDINGS.map((building, index) => (
-            <div 
+            <div
               key={building}
               className="aspect-square bg-white/5 border border-white/10 p-3 hover:bg-white/10 transition-all duration-300 group"
               style={{

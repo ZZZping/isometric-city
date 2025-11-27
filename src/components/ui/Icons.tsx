@@ -63,6 +63,16 @@ export function CloseIcon({ size = 18, className }: IconProps) {
   );
 }
 
+export function MenuIcon({ size = 18, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" className={className}>
+      <path {...baseStroke} d="M4 7h16" />
+      <path {...baseStroke} d="M4 12h16" />
+      <path {...baseStroke} d="M4 17h16" />
+    </svg>
+  );
+}
+
 export function RoadIcon({ size = 18, className }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" className={className}>

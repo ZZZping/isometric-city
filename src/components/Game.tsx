@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { useGame } from '@/context/GameContext';
 import { Tool, TOOL_INFO, Tile, BuildingType, AdjacentCity } from '@/types/game';
 import { getBuildingSize } from '@/lib/simulation';
+import { cn } from '@/lib/utils';
 import {
   PlayIcon,
   PauseIcon,
@@ -32,6 +33,7 @@ import {
   InfoIcon,
   BudgetIcon,
   SettingsIcon,
+  MenuIcon,
 } from './ui/Icons';
 import { SPRITE_SHEET, getSpriteCoords, BUILDING_TO_SPRITE, SPRITE_VERTICAL_OFFSETS, SPRITE_HORIZONTAL_OFFSETS, SPRITE_ORDER, SpritePack, getActiveSpritePack } from '@/lib/renderConfig';
 import exampleState from '@/resources/example_state.json';
@@ -398,10 +400,18 @@ const ADVISOR_ICON_MAP: Record<string, React.ReactNode> = {
 };
 
 // Memoized Sidebar Component
-const Sidebar = React.memo(function Sidebar() {
+const Sidebar = React.memo(function Sidebar({
+  variant = 'desktop',
+  onNavigate,
+  onClose,
+}: {
+  variant?: 'desktop' | 'mobile';
+  onNavigate?: () => void;
+  onClose?: () => void;
+}) {
   const { state, setTool, setActivePanel } = useGame();
   const { selectedTool, stats, activePanel } = state;
-  
+
   const toolCategories = useMemo(() => ({
     'TOOLS': ['select', 'bulldoze', 'road', 'subway'] as Tool[],
     'ZONES': ['zone_residential', 'zone_commercial', 'zone_industrial', 'zone_dezone'] as Tool[],
@@ -410,13 +420,36 @@ const Sidebar = React.memo(function Sidebar() {
     'UTILITIES': ['power_plant', 'water_tower', 'subway_station'] as Tool[],
     'SPECIAL': ['stadium', 'museum', 'airport', 'space_program', 'city_hall', 'amusement_park'] as Tool[],
   }), []);
+
+  const containerClasses = cn(
+    'bg-sidebar border-sidebar-border flex flex-col h-full',
+    variant === 'desktop' ? 'w-56 border-r' : 'w-full max-w-sm'
+  );
+
+  const handleToolClick = (tool: Tool) => {
+    setTool(tool);
+    onNavigate?.();
+  };
+
+  const handlePanelClick = (panel: 'budget' | 'statistics' | 'advisors' | 'achievements' | 'settings') => {
+    setActivePanel(activePanel === panel ? 'none' : panel);
+    onNavigate?.();
+  };
   
   return (
-    <div className="w-56 bg-sidebar border-r border-sidebar-border flex flex-col h-full">
-      <div className="px-4 py-4 border-b border-sidebar-border">
-        <div className="flex items-center gap-2">
-          <span className="text-sidebar-foreground font-bold tracking-tight">ISOCITY</span>
-        </div>
+    <div className={containerClasses}>
+      <div className="px-4 py-4 border-b border-sidebar-border flex items-center justify-between">
+        <span className="text-sidebar-foreground font-bold tracking-tight">ISOCITY</span>
+        {variant === 'mobile' && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={onClose}
+            aria-label="Close tool drawer"
+          >
+            <CloseIcon size={14} />
+          </Button>
+        )}
       </div>
       
       <ScrollArea className="flex-1 py-2">
@@ -435,12 +468,13 @@ const Sidebar = React.memo(function Sidebar() {
                 return (
                   <Button
                     key={tool}
-                    onClick={() => setTool(tool)}
+                    onClick={() => handleToolClick(tool)}
                     disabled={!canAfford && info.cost > 0}
                     variant={isSelected ? 'default' : 'ghost'}
-                    className={`w-full justify-start gap-3 px-3 py-2 h-auto text-sm ${
-                      isSelected ? 'bg-primary text-primary-foreground' : ''
-                    }`}
+                    className={cn(
+                      'w-full justify-start gap-3 px-3 py-2 h-auto text-sm',
+                      isSelected && 'bg-primary text-primary-foreground'
+                    )}
                     title={`${info.description}${info.cost > 0 ? ` - Cost: $${info.cost}` : ''}`}
                   >
                     <span className="flex-1 text-left truncate">{info.name}</span>
@@ -466,7 +500,7 @@ const Sidebar = React.memo(function Sidebar() {
           ].map(({ panel, icon, label }) => (
             <Button
               key={panel}
-              onClick={() => setActivePanel(activePanel === panel ? 'none' : panel)}
+              onClick={() => handlePanelClick(panel)}
               variant={activePanel === panel ? 'default' : 'ghost'}
               size="icon-sm"
               className="w-full"
@@ -512,36 +546,53 @@ const TimeOfDayIcon = ({ hour }: { hour: number }) => {
 };
 
 // Memoized TopBar Component
-const TopBar = React.memo(function TopBar() {
+const TopBar = React.memo(function TopBar({
+  onOpenSidebar,
+}: {
+  onOpenSidebar?: () => void;
+}) {
   const { state, setSpeed, setTaxRate, isSaving } = useGame();
   const { stats, year, month, hour, speed, taxRate, cityName } = state;
   
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   
   return (
-    <div className="h-14 bg-card border-b border-border flex items-center justify-between px-4">
-      <div className="flex items-center gap-6">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-foreground font-semibold text-sm">{cityName}</h1>
-            {isSaving && (
-              <span className="text-muted-foreground text-xs italic animate-pulse">Saving...</span>
-            )}
-          </div>
-          <div className="flex items-center gap-2 text-muted-foreground text-xs font-mono tabular-nums">
-            <span>{monthNames[month - 1]} {year}</span>
-            <TimeOfDayIcon hour={hour} />
+    <div className="bg-card border-b border-border px-4 py-3 flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          {onOpenSidebar && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="lg:hidden"
+              onClick={onOpenSidebar}
+              aria-label="Open tool drawer"
+            >
+              <MenuIcon size={16} />
+            </Button>
+          )}
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-foreground font-semibold text-sm">{cityName}</h1>
+              {isSaving && (
+                <span className="text-muted-foreground text-xs italic animate-pulse">Saving...</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2 text-muted-foreground text-xs font-mono tabular-nums">
+              <span>{monthNames[month - 1]} {year}</span>
+              <TimeOfDayIcon hour={hour} />
+            </div>
           </div>
         </div>
         
-        <div className="flex items-center gap-1 bg-secondary rounded-md p-1">
+        <div className="flex items-center gap-1 bg-secondary rounded-md p-1 w-full sm:w-auto justify-between sm:justify-start">
           {[0, 1, 2, 3].map(s => (
             <Button
               key={s}
               onClick={() => setSpeed(s as 0 | 1 | 2 | 3)}
               variant={speed === s ? 'default' : 'ghost'}
               size="icon-sm"
-              className="h-7 w-7"
+              className="h-8 w-8"
               title={s === 0 ? 'Pause' : s === 1 ? 'Normal' : s === 2 ? 'Fast' : 'Very Fast'}
             >
               {s === 0 ? <PauseIcon size={14} /> : 
@@ -557,7 +608,7 @@ const TopBar = React.memo(function TopBar() {
         </div>
       </div>
       
-      <div className="flex items-center gap-8">
+      <div className="flex flex-wrap items-center gap-4 lg:gap-8">
         <StatBadge value={stats.population.toLocaleString()} label="Population" />
         <StatBadge value={stats.jobs.toLocaleString()} label="Jobs" />
         <StatBadge 
@@ -565,7 +616,6 @@ const TopBar = React.memo(function TopBar() {
           label="Funds"
           variant={stats.money < 0 ? 'destructive' : stats.money < 1000 ? 'warning' : 'success'}
         />
-        <Separator orientation="vertical" className="h-8" />
         <StatBadge 
           value={`$${(stats.income - stats.expenses).toLocaleString()}`} 
           label="Monthly"
@@ -573,16 +623,16 @@ const TopBar = React.memo(function TopBar() {
         />
       </div>
       
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-4 justify-between">
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-start">
           <DemandIndicator label="R" demand={stats.demand.residential} color="text-green-500" />
           <DemandIndicator label="C" demand={stats.demand.commercial} color="text-blue-500" />
           <DemandIndicator label="I" demand={stats.demand.industrial} color="text-amber-500" />
         </div>
         
-        <Separator orientation="vertical" className="h-8" />
+        <Separator orientation="vertical" className="hidden sm:block h-8" />
         
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-end sm:justify-start">
           <span className="text-muted-foreground text-xs">Tax</span>
           <Slider
             value={[taxRate]}
@@ -590,9 +640,9 @@ const TopBar = React.memo(function TopBar() {
             min={0}
             max={20}
             step={1}
-            className="w-16"
+            className="w-full max-w-[180px] sm:max-w-[120px] lg:w-16"
           />
-          <span className="text-foreground text-xs font-mono tabular-nums w-8">{taxRate}%</span>
+          <span className="text-foreground text-xs font-mono tabular-nums w-10 text-right">{taxRate}%</span>
         </div>
       </div>
     </div>
@@ -643,7 +693,7 @@ const StatsPanel = React.memo(function StatsPanel() {
   const { stats } = state;
   
   return (
-    <div className="h-8 bg-secondary/50 border-b border-border flex items-center justify-center gap-8 text-xs">
+    <div className="bg-secondary/50 border-b border-border flex flex-wrap items-center justify-between gap-4 px-4 py-2 text-xs">
       <MiniStat icon={<HappyIcon size={12} />} label="Happiness" value={stats.happiness} />
       <MiniStat icon={<HealthIcon size={12} />} label="Health" value={stats.health} />
       <MiniStat icon={<EducationIcon size={12} />} label="Education" value={stats.education} />
@@ -665,10 +715,11 @@ function MiniStat({ icon, label, value }: { icon: React.ReactNode; label: string
 }
 
 // Canvas-based Minimap - Memoized
-const MiniMap = React.memo(function MiniMap() {
+const MiniMap = React.memo(function MiniMap({ variant = 'floating' }: { variant?: 'floating' | 'inline' }) {
   const { state } = useGame();
   const { grid, gridSize } = state;
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const mapSize = variant === 'floating' ? 140 : 120;
   
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -677,11 +728,10 @@ const MiniMap = React.memo(function MiniMap() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     
-    const size = 140;
-    const scale = size / gridSize;
+    const scale = mapSize / gridSize;
     
     ctx.fillStyle = '#0b1723';
-    ctx.fillRect(0, 0, size, size);
+    ctx.fillRect(0, 0, mapSize, mapSize);
     
     for (let y = 0; y < gridSize; y++) {
       for (let x = 0; x < gridSize; x++) {
@@ -708,18 +758,26 @@ const MiniMap = React.memo(function MiniMap() {
         ctx.fillRect(x * scale, y * scale, Math.ceil(scale), Math.ceil(scale));
       }
     }
-  }, [grid, gridSize]);
+  }, [grid, gridSize, mapSize]);
+  
+  const cardClasses = variant === 'floating'
+    ? 'absolute bottom-6 right-8 p-3 shadow-lg bg-card/90 border-border/70'
+    : 'p-3 shadow-lg bg-card/90 border border-border/70 w-full';
+  
+  const labelClasses = variant === 'floating'
+    ? 'text-[10px] uppercase tracking-[0.12em] text-muted-foreground font-semibold mb-2'
+    : 'text-[10px] uppercase tracking-[0.12em] text-muted-foreground font-semibold mb-2';
   
   return (
-    <Card className="absolute bottom-6 right-8 p-3 shadow-lg bg-card/90 border-border/70">
-      <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground font-semibold mb-2">
+    <Card className={cardClasses}>
+      <div className={labelClasses}>
         Minimap
       </div>
       <canvas
         ref={canvasRef}
-        width={140}
-        height={140}
-        className="block rounded-md border border-border/60"
+        width={mapSize}
+        height={mapSize}
+        className="block rounded-md border border-border/60 mx-auto"
       />
       <div className="mt-2 grid grid-cols-4 gap-1 text-[8px]">
         <div className="flex items-center gap-1">
@@ -5378,22 +5436,32 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile }: {
 // Overlay Mode Toggle
 const OverlayModeToggle = React.memo(function OverlayModeToggle({ 
   overlayMode, 
-  setOverlayMode 
+  setOverlayMode,
+  variant = 'floating',
 }: { 
   overlayMode: OverlayMode; 
   setOverlayMode: (mode: OverlayMode) => void;
+  variant?: 'floating' | 'bar';
 }) {
+  const containerClasses = variant === 'floating'
+    ? 'absolute bottom-4 left-4 p-2 shadow-lg bg-card/90 border-border/70 z-50'
+    : 'w-full p-2 rounded-xl border border-border/70 bg-card/95 shadow-lg';
+  const buttonWrapperClasses = variant === 'floating'
+    ? 'flex gap-1'
+    : 'flex gap-1 overflow-x-auto no-scrollbar';
+  const buttonSizeClass = variant === 'floating' ? 'h-8 px-3' : 'h-10 px-4 text-sm';
+
   return (
-    <Card className="absolute bottom-4 left-4 p-2 shadow-lg bg-card/90 border-border/70 z-50">
+    <Card className={containerClasses}>
       <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground font-semibold mb-2">
         View Overlay
       </div>
-      <div className="flex gap-1">
+      <div className={buttonWrapperClasses}>
         <Button
           variant={overlayMode === 'none' ? 'default' : 'ghost'}
           size="sm"
           onClick={() => setOverlayMode('none')}
-          className="h-8 px-3"
+          className={buttonSizeClass}
           title="No Overlay"
         >
           <CloseIcon size={14} />
@@ -5403,7 +5471,7 @@ const OverlayModeToggle = React.memo(function OverlayModeToggle({
           variant={overlayMode === 'power' ? 'default' : 'ghost'}
           size="sm"
           onClick={() => setOverlayMode('power')}
-          className={`h-8 px-3 ${overlayMode === 'power' ? 'bg-amber-500 hover:bg-amber-600' : ''}`}
+          className={cn(buttonSizeClass, overlayMode === 'power' && 'bg-amber-500 hover:bg-amber-600')}
           title="Power Grid"
         >
           <PowerIcon size={14} />
@@ -5413,7 +5481,7 @@ const OverlayModeToggle = React.memo(function OverlayModeToggle({
           variant={overlayMode === 'water' ? 'default' : 'ghost'}
           size="sm"
           onClick={() => setOverlayMode('water')}
-          className={`h-8 px-3 ${overlayMode === 'water' ? 'bg-blue-500 hover:bg-blue-600' : ''}`}
+          className={cn(buttonSizeClass, overlayMode === 'water' && 'bg-blue-500 hover:bg-blue-600')}
           title="Water System"
         >
           <WaterIcon size={14} />
@@ -5423,7 +5491,7 @@ const OverlayModeToggle = React.memo(function OverlayModeToggle({
           variant={overlayMode === 'fire' ? 'default' : 'ghost'}
           size="sm"
           onClick={() => setOverlayMode('fire')}
-          className={`h-8 px-3 ${overlayMode === 'fire' ? 'bg-red-500 hover:bg-red-600' : ''}`}
+          className={cn(buttonSizeClass, overlayMode === 'fire' && 'bg-red-500 hover:bg-red-600')}
           title="Fire Coverage"
         >
           <FireIcon size={14} />
@@ -5433,7 +5501,7 @@ const OverlayModeToggle = React.memo(function OverlayModeToggle({
           variant={overlayMode === 'police' ? 'default' : 'ghost'}
           size="sm"
           onClick={() => setOverlayMode('police')}
-          className={`h-8 px-3 ${overlayMode === 'police' ? 'bg-blue-600 hover:bg-blue-700' : ''}`}
+          className={cn(buttonSizeClass, overlayMode === 'police' && 'bg-blue-600 hover:bg-blue-700')}
           title="Police Coverage"
         >
           <SafetyIcon size={14} />
@@ -5443,7 +5511,7 @@ const OverlayModeToggle = React.memo(function OverlayModeToggle({
           variant={overlayMode === 'health' ? 'default' : 'ghost'}
           size="sm"
           onClick={() => setOverlayMode('health')}
-          className={`h-8 px-3 ${overlayMode === 'health' ? 'bg-green-500 hover:bg-green-600' : ''}`}
+          className={cn(buttonSizeClass, overlayMode === 'health' && 'bg-green-500 hover:bg-green-600')}
           title="Health Coverage"
         >
           <HealthIcon size={14} />
@@ -5453,7 +5521,7 @@ const OverlayModeToggle = React.memo(function OverlayModeToggle({
           variant={overlayMode === 'education' ? 'default' : 'ghost'}
           size="sm"
           onClick={() => setOverlayMode('education')}
-          className={`h-8 px-3 ${overlayMode === 'education' ? 'bg-purple-500 hover:bg-purple-600' : ''}`}
+          className={cn(buttonSizeClass, overlayMode === 'education' && 'bg-purple-500 hover:bg-purple-600')}
           title="Education Coverage"
         >
           <EducationIcon size={14} />
@@ -5463,7 +5531,7 @@ const OverlayModeToggle = React.memo(function OverlayModeToggle({
           variant={overlayMode === 'subway' ? 'default' : 'ghost'}
           size="sm"
           onClick={() => setOverlayMode('subway')}
-          className={`h-8 px-3 ${overlayMode === 'subway' ? 'bg-yellow-500 hover:bg-yellow-600' : ''}`}
+          className={cn(buttonSizeClass, overlayMode === 'subway' && 'bg-yellow-500 hover:bg-yellow-600')}
           title="Subway Coverage"
         >
           <SubwayIcon size={14} />
@@ -5473,10 +5541,53 @@ const OverlayModeToggle = React.memo(function OverlayModeToggle({
   );
 });
 
+function MobileUtilityPanel({ 
+  overlayMode, 
+  setOverlayMode 
+}: { 
+  overlayMode: OverlayMode; 
+  setOverlayMode: (mode: OverlayMode) => void;
+}) {
+  return (
+    <div className="lg:hidden w-full px-4 pb-6 pt-4 space-y-3 bg-gradient-to-t from-background via-background/95 to-transparent">
+      <OverlayModeToggle overlayMode={overlayMode} setOverlayMode={setOverlayMode} variant="bar" />
+      <MiniMap variant="inline" />
+    </div>
+  );
+}
+
+function MobileSidebarSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+  return (
+    <div
+      className={cn(
+        'lg:hidden fixed inset-0 z-50 transition-all duration-300',
+        open ? 'pointer-events-auto' : 'pointer-events-none'
+      )}
+    >
+      <div
+        className={cn(
+          'absolute inset-0 bg-black/60 transition-opacity',
+          open ? 'opacity-100' : 'opacity-0'
+        )}
+        onClick={onClose}
+      />
+      <div
+        className={cn(
+          'absolute inset-y-0 left-0 w-[85%] max-w-sm bg-sidebar border-r border-sidebar-border shadow-2xl flex flex-col transition-transform duration-300',
+          open ? 'translate-x-0' : '-translate-x-full'
+        )}
+      >
+        <Sidebar variant="mobile" onNavigate={onClose} onClose={onClose} />
+      </div>
+    </div>
+  );
+}
+
 export default function Game() {
   const { state, setTool, setActivePanel, addMoney, addNotification } = useGame();
   const [overlayMode, setOverlayMode] = useState<OverlayMode>('none');
   const [selectedTile, setSelectedTile] = useState<{ x: number; y: number } | null>(null);
+  const [isMobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const isInitialMount = useRef(true);
   
   // Cheat code system
@@ -5637,17 +5748,24 @@ export default function Game() {
 
   return (
     <TooltipProvider>
-      <div className="w-full h-full min-h-[720px] overflow-hidden bg-background flex">
-        <Sidebar />
+      <div className="w-full h-full min-h-screen overflow-hidden bg-background flex flex-col lg:flex-row">
+        <div className="hidden lg:flex h-full shrink-0">
+          <Sidebar />
+        </div>
         
-        <div className="flex-1 flex flex-col">
-          <TopBar />
+        <div className="flex-1 flex flex-col min-h-0">
+          <TopBar onOpenSidebar={() => setMobileSidebarOpen(true)} />
           <StatsPanel />
-          <div className="flex-1 relative overflow-visible">
+          <div className="flex-1 relative overflow-hidden min-h-[360px]">
             <CanvasIsometricGrid overlayMode={overlayMode} selectedTile={selectedTile} setSelectedTile={setSelectedTile} />
-            <OverlayModeToggle overlayMode={overlayMode} setOverlayMode={setOverlayMode} />
-            <MiniMap />
+            <div className="hidden lg:block">
+              <OverlayModeToggle overlayMode={overlayMode} setOverlayMode={setOverlayMode} />
+            </div>
+            <div className="hidden lg:block">
+              <MiniMap />
+            </div>
           </div>
+          <MobileUtilityPanel overlayMode={overlayMode} setOverlayMode={setOverlayMode} />
         </div>
         
         {state.activePanel === 'budget' && <BudgetPanel />}
@@ -5657,6 +5775,7 @@ export default function Game() {
         {state.activePanel === 'settings' && <SettingsPanel />}
         
         <VinnieDialog open={showVinnieDialog} onOpenChange={setShowVinnieDialog} />
+        <MobileSidebarSheet open={isMobileSidebarOpen} onClose={() => setMobileSidebarOpen(false)} />
       </div>
     </TooltipProvider>
   );
