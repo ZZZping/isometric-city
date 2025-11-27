@@ -638,6 +638,15 @@ function createAchievements(): Achievement[] {
 export function createInitialGameState(size: number = 60, cityName: string = 'New City'): GameState {
   const { grid, waterBodies } = generateTerrain(size);
   const adjacentCities = generateAdjacentCities();
+  const stats = createInitialStats();
+  const services = createServiceCoverage(size);
+  const initialLandValues = calculateLandValueMap(grid, services, stats, { smooth: false });
+
+  for (let y = 0; y < grid.length; y++) {
+    for (let x = 0; x < grid[y].length; x++) {
+      grid[y][x].landValue = initialLandValues[y][x];
+    }
+  }
 
   return {
     grid,
@@ -652,9 +661,9 @@ export function createInitialGameState(size: number = 60, cityName: string = 'Ne
     selectedTool: 'select',
     taxRate: 9,
     effectiveTaxRate: 9, // Start matching taxRate
-    stats: createInitialStats(),
+    stats,
     budget: createInitialBudget(),
-    services: createServiceCoverage(size),
+    services,
     notifications: [],
     achievements: createAchievements(),
     advisorMessages: [],
@@ -838,6 +847,295 @@ function hasRoadAccess(
   }
 
   return false;
+}
+
+const NATURAL_FEATURE_BUILDINGS: BuildingType[] = [
+  'tree',
+  'park',
+  'park_large',
+  'tennis',
+  'community_garden',
+  'pond_park',
+  'park_gate',
+  'greenhouse_garden',
+  'playground_small',
+  'playground_large',
+  'basketball_courts',
+  'swimming_pool',
+  'mini_golf_course',
+  'skate_park',
+  'campground',
+  'cabin_house',
+  'pond_park',
+  'mountain_lodge',
+  'mountain_trailhead',
+  'marina_docks_small',
+  'pier_large',
+];
+
+const AMENITY_HUB_BUILDINGS: BuildingType[] = [
+  'stadium',
+  'museum',
+  'city_hall',
+  'amusement_park',
+  'university',
+  'school',
+  'hospital',
+  'mall',
+  'space_program',
+  'office_high',
+  'office_low',
+  'apartment_high',
+  'apartment_low',
+  'mansion',
+  'community_center',
+  'office_building_small',
+  'roller_coaster_small',
+  'go_kart_track',
+  'amphitheater',
+  'baseball_stadium',
+  'football_field',
+  'baseball_field_small',
+  'soccer_field_small',
+  'mini_golf_course',
+  'swimming_pool',
+  'tennis',
+  'basketball_courts',
+  'playground_large',
+  'playground_small',
+  'pond_park',
+  'subway_station',
+];
+
+const NUISANCE_SOURCE_BUILDINGS: BuildingType[] = [
+  'factory_small',
+  'factory_medium',
+  'factory_large',
+  'warehouse',
+  'power_plant',
+  'airport',
+];
+
+const NATURAL_FEATURE_SET = new Set(NATURAL_FEATURE_BUILDINGS);
+const AMENITY_HUB_SET = new Set(AMENITY_HUB_BUILDINGS);
+const NUISANCE_SOURCE_SET = new Set(NUISANCE_SOURCE_BUILDINGS);
+
+type LandValueOptions = {
+  smooth?: boolean;
+};
+
+type NeighborhoodInfluence = {
+  amenity: number;
+  nuisance: number;
+  scenic: number;
+  roadDistance: number;
+};
+
+function clampValue(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function analyzeNeighborhood(grid: Tile[][], x: number, y: number, radius: number): NeighborhoodInfluence {
+  const size = grid.length;
+  let amenity = 0;
+  let nuisance = 0;
+  let scenic = 0;
+  let bestRoadDistance = Number.POSITIVE_INFINITY;
+  const maxDistance = radius + 0.5;
+
+  for (let dy = -radius; dy <= radius; dy++) {
+    for (let dx = -radius; dx <= radius; dx++) {
+      if (dx === 0 && dy === 0) continue;
+      const nx = x + dx;
+      const ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= size || ny >= size) continue;
+
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      if (distance > radius) continue;
+      const weight = 1 - distance / maxDistance;
+      if (weight <= 0) continue;
+
+      const neighbor = grid[ny][nx];
+      const stats = BUILDING_STATS[neighbor.building.type];
+
+      if (stats) {
+        if (stats.landValue !== 0) {
+          const influence = Math.abs(stats.landValue) * 0.08 * weight;
+          if (stats.landValue > 0) {
+            amenity += influence;
+          } else {
+            nuisance += influence;
+          }
+        }
+
+        if (stats.pollution > 0) {
+          nuisance += stats.pollution * 0.04 * weight;
+        }
+      }
+
+      if (NATURAL_FEATURE_SET.has(neighbor.building.type) || neighbor.building.type === 'water') {
+        scenic += 3.5 * weight;
+      }
+
+      if (AMENITY_HUB_SET.has(neighbor.building.type)) {
+        amenity += 3 * weight;
+      }
+
+      if (NUISANCE_SOURCE_SET.has(neighbor.building.type)) {
+        nuisance += 4 * weight;
+      }
+
+      if (neighbor.building.type === 'road') {
+        bestRoadDistance = Math.min(bestRoadDistance, distance);
+      }
+    }
+  }
+
+  return {
+    amenity,
+    nuisance,
+    scenic,
+    roadDistance: bestRoadDistance,
+  };
+}
+
+function calculateLandValueMap(
+  grid: Tile[][],
+  services: ServiceCoverage,
+  stats: Stats,
+  options: LandValueOptions = {}
+): number[][] {
+  const { smooth = true } = options;
+  const size = grid.length;
+  const demand = stats?.demand ?? { residential: 0, commercial: 0, industrial: 0 };
+  const environmentScore = stats?.environment ?? 50;
+  const happinessScore = stats?.happiness ?? 50;
+  const landValues = Array.from({ length: size }, () => Array(size).fill(0));
+  const roadAccessCache: (boolean | null)[][] = Array.from({ length: size }, () => Array(size).fill(null));
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const tile = grid[y][x];
+      const zone = tile.zone;
+      const buildingStats = BUILDING_STATS[tile.building.type];
+
+      let baseValue = 25;
+      if (tile.building.type === 'water') {
+        baseValue = 65;
+      } else {
+        switch (zone) {
+          case 'residential':
+            baseValue = 40;
+            break;
+          case 'commercial':
+            baseValue = 34;
+            break;
+          case 'industrial':
+            baseValue = 28;
+            break;
+          default:
+            baseValue = 25;
+        }
+      }
+
+      if (buildingStats) {
+        baseValue += buildingStats.landValue * 0.9;
+        if (tile.building.level > 1) {
+          baseValue += (tile.building.level - 1) * 6;
+        }
+      }
+
+      const neighborhood = analyzeNeighborhood(grid, x, y, 5);
+      const zoneAmenityMultiplier =
+        zone === 'industrial' ? 0.55 : zone === 'commercial' ? 0.9 : 1.1;
+      const zoneNuisanceMultiplier =
+        zone === 'industrial' ? 0.35 : zone === 'commercial' ? 0.65 : 1;
+
+      let value = baseValue;
+      value += neighborhood.amenity * zoneAmenityMultiplier;
+      value -= neighborhood.nuisance * zoneNuisanceMultiplier;
+      value += neighborhood.scenic;
+
+      const serviceCoverage = (
+        services.police[y][x] +
+        services.fire[y][x] +
+        services.health[y][x] +
+        services.education[y][x]
+      ) / 4;
+      value += serviceCoverage * 0.25;
+
+      if (services.power[y][x]) {
+        value += 4;
+      } else if (zone !== 'none') {
+        value -= 10;
+      }
+
+      if (services.water[y][x]) {
+        value += 3;
+      } else if (zone !== 'none') {
+        value -= 8;
+      }
+
+      const zoneDemand =
+        zone === 'residential'
+          ? demand.residential
+          : zone === 'commercial'
+          ? demand.commercial
+          : zone === 'industrial'
+          ? demand.industrial
+          : 0;
+      value += zoneDemand * 0.15;
+
+      const environmentBonus = (environmentScore - 50) * 0.35;
+      const happinessBonus = (happinessScore - 50) * 0.2;
+      value += environmentBonus + happinessBonus;
+
+      const pollutionPenalty =
+        tile.pollution *
+        (zone === 'industrial' ? 0.18 : zone === 'commercial' ? 0.32 : 0.48);
+      value -= pollutionPenalty;
+
+      if (tile.building.abandoned) {
+        value -= 25;
+      }
+      if (tile.building.onFire) {
+        value -= 20;
+      }
+      if (tile.building.constructionProgress !== undefined && tile.building.constructionProgress < 100) {
+        value -= 12;
+      }
+
+      const roadDistance = neighborhood.roadDistance;
+      if (Number.isFinite(roadDistance)) {
+        value += Math.max(0, 5 - roadDistance) * 1.4;
+      } else {
+        value -= 4;
+      }
+
+      if (zone !== 'none' && tile.building.type !== 'road') {
+        let roadConnected = roadAccessCache[y][x];
+        if (roadConnected === null) {
+          roadConnected = hasRoadAccess(grid, x, y, size);
+          roadAccessCache[y][x] = roadConnected;
+        }
+        value += roadConnected ? 6 : -12;
+      }
+
+      if (tile.hasSubway) {
+        value += 5;
+      }
+      if (tile.building.type === 'subway_station') {
+        value += 8;
+      }
+
+      const rawValue = clampValue(value, 5, 250);
+      const previousValue = tile.landValue ?? rawValue;
+      const blendedValue = smooth ? previousValue * 0.55 + rawValue * 0.45 : rawValue;
+      landValues[y][x] = Math.round(clampValue(blendedValue, 5, 250));
+    }
+  }
+
+  return landValues;
 }
 
 // Evolve buildings based on conditions, reserving footprints as density increases
@@ -1477,6 +1775,13 @@ export function simulateTick(state: GameState): GameState {
 
   // Update service coverage
   const services = calculateServiceCoverage(newGrid, size);
+  const updatedLandValues = calculateLandValueMap(newGrid, services, state.stats);
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      newGrid[y][x].landValue = updatedLandValues[y][x];
+    }
+  }
 
   // Evolve buildings
   for (let y = 0; y < size; y++) {
