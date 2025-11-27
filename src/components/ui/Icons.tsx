@@ -66,8 +66,10 @@ export function CloseIcon({ size = 18, className }: IconProps) {
 export function RoadIcon({ size = 18, className }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" className={className}>
-      <path {...baseStroke} d="M9 3h6l-1.5 18h-3z" />
-      <path {...baseStroke} d="M12 6v3M12 12v3M12 18v1" />
+      <path {...baseStroke} d="M8.2 3h7.6L17.5 21H6.5z" />
+      <path {...baseStroke} d="M10 4l-1.2 17" />
+      <path {...baseStroke} d="M14 4l1.2 17" />
+      <path {...baseStroke} d="M12 6.2v2.6M12 11v2.6M12 15.8v2.4" />
     </svg>
   );
 }
