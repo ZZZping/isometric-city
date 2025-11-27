@@ -665,7 +665,17 @@ function MiniStat({ icon, label, value }: { icon: React.ReactNode; label: string
 }
 
 // Canvas-based Minimap - Memoized
-const MiniMap = React.memo(function MiniMap({ onNavigate }: { onNavigate?: (gridX: number, gridY: number) => void }) {
+const MiniMap = React.memo(function MiniMap({ 
+  onNavigate,
+  offset,
+  zoom,
+  canvasSize
+}: { 
+  onNavigate?: (gridX: number, gridY: number) => void;
+  offset: { x: number; y: number };
+  zoom: number;
+  canvasSize: { width: number; height: number };
+}) {
   const { state } = useGame();
   const { grid, gridSize } = state;
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -708,7 +718,50 @@ const MiniMap = React.memo(function MiniMap({ onNavigate }: { onNavigate?: (grid
         ctx.fillRect(x * scale, y * scale, Math.ceil(scale), Math.ceil(scale));
       }
     }
-  }, [grid, gridSize]);
+    
+    // Draw viewport rectangle
+    // Convert viewport screen corners to grid coordinates
+    // The viewport in screen coordinates is from (0, 0) to (canvasSize.width, canvasSize.height)
+    // Account for zoom: world coordinates = (screen - offset) / zoom
+    const worldTopLeftX = (0 - offset.x) / zoom;
+    const worldTopLeftY = (0 - offset.y) / zoom;
+    const worldTopRightX = (canvasSize.width - offset.x) / zoom;
+    const worldTopRightY = (0 - offset.y) / zoom;
+    const worldBottomLeftX = (0 - offset.x) / zoom;
+    const worldBottomLeftY = (canvasSize.height - offset.y) / zoom;
+    const worldBottomRightX = (canvasSize.width - offset.x) / zoom;
+    const worldBottomRightY = (canvasSize.height - offset.y) / zoom;
+    
+    // Convert world coordinates to grid coordinates (screenToGrid with offset=0 since we already accounted for it)
+    const topLeft = screenToGrid(worldTopLeftX, worldTopLeftY, 0, 0);
+    const topRight = screenToGrid(worldTopRightX, worldTopRightY, 0, 0);
+    const bottomLeft = screenToGrid(worldBottomLeftX, worldBottomLeftY, 0, 0);
+    const bottomRight = screenToGrid(worldBottomRightX, worldBottomRightY, 0, 0);
+    
+    // Find bounding box in grid coordinates
+    const minGridX = Math.min(topLeft.gridX, topRight.gridX, bottomLeft.gridX, bottomRight.gridX);
+    const maxGridX = Math.max(topLeft.gridX, topRight.gridX, bottomLeft.gridX, bottomRight.gridX);
+    const minGridY = Math.min(topLeft.gridY, topRight.gridY, bottomLeft.gridY, bottomRight.gridY);
+    const maxGridY = Math.max(topLeft.gridY, topRight.gridY, bottomLeft.gridY, bottomRight.gridY);
+    
+    // Clamp to valid grid bounds
+    const clampedMinX = Math.max(0, minGridX);
+    const clampedMaxX = Math.min(gridSize - 1, maxGridX);
+    const clampedMinY = Math.max(0, minGridY);
+    const clampedMaxY = Math.min(gridSize - 1, maxGridY);
+    
+    // Draw white rectangle representing viewport
+    if (clampedMinX <= clampedMaxX && clampedMinY <= clampedMaxY) {
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(
+        clampedMinX * scale,
+        clampedMinY * scale,
+        (clampedMaxX - clampedMinX + 1) * scale,
+        (clampedMaxY - clampedMinY + 1) * scale
+      );
+    }
+  }, [grid, gridSize, offset, zoom, canvasSize]);
 
   const handleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!onNavigate) return;
@@ -5706,7 +5759,12 @@ export default function Game() {
               onNavigationComplete={() => setNavigationTarget(null)}
             />
             <OverlayModeToggle overlayMode={overlayMode} setOverlayMode={setOverlayMode} />
-            <MiniMap onNavigate={(x, y) => setNavigationTarget({ x, y })} />
+            <MiniMap 
+              onNavigate={(x, y) => setNavigationTarget({ x, y })} 
+              offset={offset}
+              zoom={zoom}
+              canvasSize={canvasSize}
+            />
           </div>
         </div>
         
