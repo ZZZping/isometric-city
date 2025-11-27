@@ -41,6 +41,7 @@ type GameContextValue = {
   exportState: () => string;
   hasExistingGame: boolean;
   isSaving: boolean;
+  connectCity: (cityId: string) => void;
   // Sprite pack management
   currentSpritePack: SpritePack;
   availableSpritePacks: SpritePack[];
@@ -108,6 +109,13 @@ function loadGameState(): GameState | null {
         // Migrate selectedTool if it's park_medium
         if (parsed.selectedTool === 'park_medium') {
           parsed.selectedTool = 'park_large';
+        }
+        // Ensure adjacentCities and waterBodies exist for backward compatibility
+        if (!parsed.adjacentCities) {
+          parsed.adjacentCities = [];
+        }
+        if (!parsed.waterBodies) {
+          parsed.waterBodies = [];
         }
         return parsed as GameState;
       } else {
@@ -438,6 +446,27 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     return JSON.stringify(state);
   }, [state]);
 
+  const connectCity = useCallback((cityId: string) => {
+    setState((prev) => {
+      const city = prev.adjacentCities.find(c => c.id === cityId);
+      if (!city || city.connected) return prev;
+      
+      const connectionCost = 500;
+      if (prev.stats.money < connectionCost) return prev;
+      
+      return {
+        ...prev,
+        adjacentCities: prev.adjacentCities.map(c => 
+          c.id === cityId ? { ...c, connected: true } : c
+        ),
+        stats: {
+          ...prev.stats,
+          money: prev.stats.money - connectionCost,
+        },
+      };
+    });
+  }, []);
+
   const value: GameContextValue = {
     state,
     setTool,
@@ -452,6 +481,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     exportState,
     hasExistingGame,
     isSaving,
+    connectCity,
     // Sprite pack management
     currentSpritePack,
     availableSpritePacks: SPRITE_PACKS,
