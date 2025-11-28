@@ -52,6 +52,10 @@ type GameContextValue = {
   currentSpritePack: SpritePack;
   availableSpritePacks: SpritePack[];
   setSpritePack: (packId: string) => void;
+  // Tile placement tracking
+  tilesPlaced: number;
+  gameStartTime: number | null;
+  resetPlacementTracking: () => void;
 };
 
 const GameContext = createContext<GameContextValue | null>(null);
@@ -275,6 +279,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   // Sprite pack state
   const [currentSpritePack, setCurrentSpritePack] = useState<SpritePack>(() => getSpritePack(DEFAULT_SPRITE_PACK_ID));
   
+  // Tile placement tracking
+  const [tilesPlaced, setTilesPlaced] = useState(0);
+  const [gameStartTime, setGameStartTime] = useState<number | null>(null);
+  
   // Load game state and sprite pack from localStorage on mount (client-side only)
   useEffect(() => {
     // Load sprite pack preference
@@ -289,11 +297,19 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       skipNextSaveRef.current = true; // Set skip flag BEFORE updating state
       setState(saved);
       setHasExistingGame(true);
+      // Don't reset tracking for loaded games - they're existing games
     } else {
       setHasExistingGame(false);
+      // Only start tracking for new games
+      setGameStartTime(Date.now());
     }
     // Mark as loaded immediately - the skipNextSaveRef will handle skipping the first save
     hasLoadedRef.current = true;
+  }, []);
+  
+  const resetPlacementTracking = useCallback(() => {
+    setTilesPlaced(0);
+    setGameStartTime(Date.now());
   }, []);
   
   // Track the state that needs to be saved
@@ -467,6 +483,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         const nextState = placeSubway(prev, x, y);
         if (nextState === prev) return prev;
         
+        // Track tile placement (subway counts as a placement)
+        setTilesPlaced((count) => count + 1);
+        
         return {
           ...nextState,
           stats: { ...nextState.stats, money: nextState.stats.money - cost },
@@ -477,10 +496,15 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
       if (tool === 'bulldoze') {
         nextState = bulldozeTile(prev, x, y);
+        // Don't count bulldozing as a placement
       } else if (zone) {
         nextState = placeBuilding(prev, x, y, null, zone);
+        // Track tile placement
+        setTilesPlaced((count) => count + 1);
       } else if (building) {
         nextState = placeBuilding(prev, x, y, building, null);
+        // Track tile placement
+        setTilesPlaced((count) => count + 1);
       } else {
         return prev;
       }
@@ -609,6 +633,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     clearGameState(); // Clear saved state when starting fresh
     const fresh = createInitialGameState(size ?? 60, name || 'IsoCity');
     setState(fresh);
+    // Reset placement tracking for new game
+    setTilesPlaced(0);
+    setGameStartTime(Date.now());
   }, []);
 
   const loadState = useCallback((stateString: string): boolean => {
@@ -656,6 +683,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           }
         }
         setState(parsed as GameState);
+        // Reset placement tracking when loading a state
+        setTilesPlaced(0);
+        setGameStartTime(Date.now());
         return true;
       }
       return false;
@@ -724,6 +754,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     currentSpritePack,
     availableSpritePacks: SPRITE_PACKS,
     setSpritePack,
+    // Tile placement tracking
+    tilesPlaced,
+    gameStartTime,
+    resetPlacementTracking,
   };
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;

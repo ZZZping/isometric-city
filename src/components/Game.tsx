@@ -12,6 +12,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { useCheatCodes } from '@/hooks/useCheatCodes';
 import { VinnieDialog } from '@/components/VinnieDialog';
 import { CommandMenu } from '@/components/ui/CommandMenu';
+import { Toaster, ToastProps } from '@/components/ui/toast';
 
 // Import game components
 import { OverlayMode } from '@/components/game/types';
@@ -29,7 +30,12 @@ import { TopBar, StatsPanel } from '@/components/game/TopBar';
 import { CanvasIsometricGrid } from '@/components/game/CanvasIsometricGrid';
 
 export default function Game() {
-  const { state, setTool, setActivePanel, addMoney, addNotification, setSpeed } = useGame();
+  const { state, setTool, setActivePanel, addMoney, addNotification, setSpeed, tilesPlaced, gameStartTime, loadState } = useGame();
+  const [toasts, setToasts] = React.useState<ToastProps[]>([]);
+  const toastShownRef = React.useRef(false);
+  const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const currentGameStartTimeRef = React.useRef<number | null>(null);
+  const tilesPlacedRef = React.useRef(0);
   const [overlayMode, setOverlayMode] = useState<OverlayMode>('none');
   const [selectedTile, setSelectedTile] = useState<{ x: number; y: number } | null>(null);
   const [navigationTarget, setNavigationTarget] = useState<{ x: number; y: number } | null>(null);
@@ -182,6 +188,82 @@ export default function Game() {
     }
   }, [triggeredCheat, addMoney, addNotification, clearTriggeredCheat]);
 
+  // Keep tilesPlacedRef in sync
+  useEffect(() => {
+    tilesPlacedRef.current = tilesPlaced;
+  }, [tilesPlaced]);
+  
+  // Check if user has placed 10+ tiles in first 30 seconds
+  useEffect(() => {
+    // Only check for new games (not loaded games)
+    if (!gameStartTime) return;
+    
+    // If this is a new game start (different from the one we're tracking), reset everything
+    if (currentGameStartTimeRef.current !== gameStartTime) {
+      // Clear any existing timer
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      
+      // Reset toast shown flag when game starts
+      toastShownRef.current = false;
+      currentGameStartTimeRef.current = gameStartTime;
+      tilesPlacedRef.current = 0;
+      
+      // Set up new timer for this game
+      timerRef.current = setTimeout(() => {
+        // After 30 seconds, check if less than 10 tiles have been placed
+        if (!toastShownRef.current && tilesPlacedRef.current < 10) {
+          const handleLoadExampleCity = async () => {
+            try {
+              const { default: exampleState5 } = await import('@/resources/example_state_5.json');
+              loadState(JSON.stringify(exampleState5));
+              // Remove toast
+              setToasts([]);
+            } catch (error) {
+              console.error('Failed to load example state 5:', error);
+            }
+          };
+
+          setToasts([{
+            id: 'random-city-suggestion',
+            title: 'Try random city?',
+            action: {
+              label: 'Load',
+              onClick: handleLoadExampleCity,
+            },
+            onClose: () => {
+              setToasts([]);
+              toastShownRef.current = true;
+            },
+          }]);
+        }
+        toastShownRef.current = true;
+      }, 30000); // 30 seconds
+    }
+
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [gameStartTime, loadState]);
+  
+  // Check tilesPlaced separately to hide toast if user reaches 10+ tiles before timer fires
+  useEffect(() => {
+    if (tilesPlaced >= 10 && !toastShownRef.current) {
+      // User has placed 10+ tiles, cancel the timer and don't show the toast
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      toastShownRef.current = true;
+      setToasts([]);
+    }
+  }, [tilesPlaced]);
+
   // Mobile layout
   if (isMobile) {
     return (
@@ -218,6 +300,7 @@ export default function Game() {
           {state.activePanel === 'settings' && <SettingsPanel />}
           
           <VinnieDialog open={showVinnieDialog} onOpenChange={setShowVinnieDialog} />
+          <Toaster toasts={toasts} />
         </div>
       </TooltipProvider>
     );
@@ -253,6 +336,7 @@ export default function Game() {
         
         <VinnieDialog open={showVinnieDialog} onOpenChange={setShowVinnieDialog} />
         <CommandMenu />
+        <Toaster toasts={toasts} />
       </div>
     </TooltipProvider>
   );
