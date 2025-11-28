@@ -1,7 +1,26 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { isMobile, isTablet, isMobileOnly } from 'react-device-detect';
+
+// SSR-safe mobile detection without react-device-detect
+function detectMobileDevice(): boolean {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+    navigator.userAgent
+  );
+}
+
+function detectTabletDevice(): boolean {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+  return /iPad|Android/i.test(navigator.userAgent) && !/Mobile/i.test(navigator.userAgent);
+}
+
+function detectMobileOnly(): boolean {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+  return /iPhone|iPod|Android.*Mobile|BlackBerry|IEMobile|Opera Mini/i.test(
+    navigator.userAgent
+  );
+}
 
 interface UseMobileReturn {
   isMobileDevice: boolean;
@@ -20,6 +39,9 @@ export function useMobile(): UseMobileReturn {
   const [isSmallScreen, setIsSmallScreen] = useState(false);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('portrait');
+  const [isMobile, setIsMobile] = useState(false);
+  const [isTablet, setIsTablet] = useState(false);
+  const [isMobileOnlyFlag, setIsMobileOnlyFlag] = useState(false);
 
   useEffect(() => {
     const updateDimensions = () => {
@@ -40,8 +62,15 @@ export function useMobile(): UseMobileReturn {
       );
     };
 
+    const checkDeviceType = () => {
+      setIsMobile(detectMobileDevice());
+      setIsTablet(detectTabletDevice());
+      setIsMobileOnlyFlag(detectMobileOnly());
+    };
+
     updateDimensions();
     checkTouch();
+    checkDeviceType();
 
     window.addEventListener('resize', updateDimensions);
     window.addEventListener('orientationchange', updateDimensions);
@@ -55,7 +84,7 @@ export function useMobile(): UseMobileReturn {
   return {
     isMobileDevice: isMobile || isSmallScreen,
     isTabletDevice: isTablet,
-    isMobileOnly: isMobileOnly,
+    isMobileOnly: isMobileOnlyFlag,
     isSmallScreen,
     isTouchDevice,
     screenWidth,
@@ -67,5 +96,5 @@ export function useMobile(): UseMobileReturn {
 // Simple context-free check for SSR
 export function getIsMobileSSR(): boolean {
   if (typeof window === 'undefined') return false;
-  return window.innerWidth < 768 || isMobile;
+  return window.innerWidth < 768 || detectMobileDevice();
 }

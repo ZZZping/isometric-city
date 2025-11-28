@@ -1,13 +1,51 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
-import { GameProvider } from '@/context/GameContext';
-import Game from '@/components/Game';
+import dynamic from 'next/dynamic';
 import Image from 'next/image';
-import { useMobile } from '@/hooks/useMobile';
+
+// Dynamic imports with SSR disabled to avoid context issues during build
+const Button = dynamic(
+  () => import('@/components/ui/button').then((mod) => mod.Button),
+  { ssr: false }
+);
+const GameProvider = dynamic(
+  () => import('@/context/GameContext').then((mod) => mod.GameProvider),
+  { ssr: false }
+);
+const Game = dynamic(() => import('@/components/Game'), { ssr: false });
 
 const STORAGE_KEY = 'isocity-game-state';
+
+// SSR-safe mobile detection hook
+function useMobileLocal() {
+  const [state, setState] = useState({
+    isMobileDevice: false,
+    isSmallScreen: false,
+    orientation: 'portrait' as 'portrait' | 'landscape',
+  });
+
+  useEffect(() => {
+    const updateState = () => {
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+        navigator.userAgent
+      );
+      setState({
+        isMobileDevice: isMobile,
+        isSmallScreen: width < 768,
+        orientation: width > height ? 'landscape' : 'portrait',
+      });
+    };
+
+    updateState();
+    window.addEventListener('resize', updateState);
+    return () => window.removeEventListener('resize', updateState);
+  }, []);
+
+  return state;
+}
 
 // Building assets to display
 const BUILDINGS = [
@@ -55,7 +93,7 @@ function hasSavedGame(): boolean {
 export default function HomePage() {
   const [showGame, setShowGame] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
-  const { isMobileDevice, isSmallScreen, orientation } = useMobile();
+  const { isMobileDevice, isSmallScreen, orientation } = useMobileLocal();
   const isMobile = isMobileDevice || isSmallScreen;
 
   // Check for saved game after mount (client-side only)
