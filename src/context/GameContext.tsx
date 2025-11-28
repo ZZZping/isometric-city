@@ -16,6 +16,7 @@ import {
   placeBuilding,
   placeSubway,
   simulateTick,
+  DAY_NIGHT_CYCLE_TICKS,
 } from '@/lib/simulation';
 import {
   SPRITE_PACKS,
@@ -24,6 +25,7 @@ import {
   setActiveSpritePack,
   SpritePack,
 } from '@/lib/renderConfig';
+import { createInitialWeatherState } from '@/lib/weather';
 
 const STORAGE_KEY = 'isocity-game-state';
 const SPRITE_PACK_STORAGE_KEY = 'isocity-sprite-pack';
@@ -158,6 +160,13 @@ function loadGameState(): GameState | null {
         // Ensure effectiveTaxRate exists for lagging tax effect
         if (parsed.effectiveTaxRate === undefined) {
           parsed.effectiveTaxRate = parsed.taxRate ?? 9; // Start at current tax rate
+        }
+        if (!parsed.weather || parsed.weather.daylight === undefined) {
+          parsed.weather = createInitialWeatherState(parsed.month ?? 1, parsed.weather ?? null);
+        }
+        if (parsed.dayNightTick === undefined) {
+          const baseHour = parsed.hour ?? 12;
+          parsed.dayNightTick = Math.floor((baseHour / 24) * DAY_NIGHT_CYCLE_TICKS);
         }
         // Migrate constructionProgress for existing buildings (they're already built)
         if (parsed.grid) {
@@ -563,6 +572,13 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         // Ensure effectiveTaxRate exists for lagging tax effect
         if (parsed.effectiveTaxRate === undefined) {
           parsed.effectiveTaxRate = parsed.taxRate ?? 9;
+        }
+        if (!parsed.weather || parsed.weather.daylight === undefined) {
+          parsed.weather = createInitialWeatherState(parsed.month ?? 1, parsed.weather ?? null);
+        }
+        if (parsed.dayNightTick === undefined) {
+          const baseHour = parsed.hour ?? 12;
+          parsed.dayNightTick = Math.floor((baseHour / 24) * DAY_NIGHT_CYCLE_TICKS);
         }
         // Migrate constructionProgress for existing buildings (they're already built)
         if (parsed.grid) {

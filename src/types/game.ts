@@ -75,6 +75,38 @@ export type BuildingType =
 
 export type ZoneType = 'none' | 'residential' | 'commercial' | 'industrial';
 
+export type Season = 'winter' | 'spring' | 'summer' | 'autumn';
+
+export type WeatherCondition = 'clear' | 'cloudy' | 'rain' | 'snow' | 'storm' | 'heatwave';
+
+export type WeatherTemperature = 'freezing' | 'cold' | 'mild' | 'warm' | 'hot';
+
+export type WeatherPrecipitation = 'none' | 'rain' | 'snow';
+
+export interface WeatherEconomicImpact {
+  demandResidential: number;
+  demandCommercial: number;
+  demandIndustrial: number;
+  expenseMultiplier: number;
+}
+
+export interface WeatherState {
+  season: Season;
+  condition: WeatherCondition;
+  temperature: WeatherTemperature;
+  precipitationType: WeatherPrecipitation;
+  precipitationIntensity: number; // 0-1
+  hasLightning: boolean;
+  cloudCover: number; // 0-1
+  humidity: number; // 0-1
+  wind: number; // 0-1
+  daylight: { dawn: number; dusk: number };
+  snowpack: number; // 0-1 accumulated ground cover
+  heatHaze: number; // 0-1 shimmer strength
+  economic: WeatherEconomicImpact;
+  daysRemaining: number;
+}
+
 export type Tool =
   | 'select'
   | 'bulldoze'
@@ -313,7 +345,8 @@ export interface GameState {
   month: number;
   day: number;
   hour: number; // 0-23 for day/night cycle
-  tick: number;
+  tick: number; // calendar sub-day tick counter
+  dayNightTick: number; // visual tick for lighting cycle
   speed: 0 | 1 | 2 | 3;
   selectedTool: Tool;
   taxRate: number;
@@ -328,6 +361,7 @@ export interface GameState {
   disastersEnabled: boolean;
   adjacentCities: AdjacentCity[];
   waterBodies: WaterBody[];
+  weather: WeatherState;
 }
 
 // Building evolution paths based on zone and level

@@ -18,8 +18,13 @@ import {
   RESIDENTIAL_BUILDINGS,
   COMMERCIAL_BUILDINGS,
   INDUSTRIAL_BUILDINGS,
+  WeatherState,
 } from '@/types/game';
 import { generateCityName, generateWaterName } from './names';
+import { advanceWeatherState, createInitialWeatherState } from './weather';
+
+export const CALENDAR_TICKS_PER_DAY = 18; // faster calendar progression
+export const DAY_NIGHT_CYCLE_TICKS = 450; // visual day/night cycle remains unchanged
 
 // Check if a factory_small at this position would render as a farm
 // This matches the deterministic logic in Game.tsx for farm variant selection
@@ -484,6 +489,13 @@ function isNearWater(grid: Tile[][], x: number, y: number, size: number): boolea
 // Building types that require water adjacency
 const WATERFRONT_BUILDINGS: BuildingType[] = ['marina_docks_small', 'pier_large'];
 
+const DEFAULT_WEATHER_IMPACT = {
+  demandResidential: 0,
+  demandCommercial: 0,
+  demandIndustrial: 0,
+  expenseMultiplier: 1,
+};
+
 // Check if a building type requires water adjacency
 export function requiresWaterAdjacency(buildingType: BuildingType): boolean {
   return WATERFRONT_BUILDINGS.includes(buildingType);
@@ -646,6 +658,7 @@ function createServiceCoverage(size: number): ServiceCoverage {
 export function createInitialGameState(size: number = 60, cityName: string = 'New City'): GameState {
   const { grid, waterBodies } = generateTerrain(size);
   const adjacentCities = generateAdjacentCities();
+  const initialWeather = createInitialWeatherState(1);
 
   return {
     grid,
@@ -656,6 +669,7 @@ export function createInitialGameState(size: number = 60, cityName: string = 'Ne
     day: 1,
     hour: 12, // Start at noon
     tick: 0,
+    dayNightTick: Math.floor(DAY_NIGHT_CYCLE_TICKS * 0.5),
     speed: 1,
     selectedTool: 'select',
     taxRate: 9,
@@ -670,6 +684,7 @@ export function createInitialGameState(size: number = 60, cityName: string = 'Ne
     disastersEnabled: true,
     adjacentCities,
     waterBodies,
+    weather: initialWeather,
   };
 }
 
@@ -1106,7 +1121,15 @@ function evolveBuilding(grid: Tile[][], x: number, y: number, services: ServiceC
 
 // Calculate city stats
 // effectiveTaxRate is the lagged tax rate used for demand calculations
-function calculateStats(grid: Tile[][], size: number, budget: Budget, taxRate: number, effectiveTaxRate: number, services: ServiceCoverage): Stats {
+function calculateStats(
+  grid: Tile[][],
+  size: number,
+  budget: Budget,
+  taxRate: number,
+  effectiveTaxRate: number,
+  services: ServiceCoverage,
+  weather?: WeatherState
+): Stats {
   let population = 0;
   let jobs = 0;
   let totalPollution = 0;
@@ -1184,9 +1207,17 @@ function calculateStats(grid: Tile[][], size: number, budget: Budget, taxRate: n
   
   // Apply tax effect: multiply by tax factor, then add small modifier
   // The multiplier ensures high taxes crush demand; the additive fine-tunes at normal rates
-  const residentialDemand = Math.min(100, Math.max(-100, baseResidentialDemand * taxMultiplier + taxAdditiveModifier));
-  const commercialDemand = Math.min(100, Math.max(-100, baseCommercialDemand * taxMultiplier + taxAdditiveModifier * 0.8));
-  const industrialDemand = Math.min(100, Math.max(-100, baseIndustrialDemand * taxMultiplier + taxAdditiveModifier * 0.5));
+  const weatherImpact = weather?.economic ?? DEFAULT_WEATHER_IMPACT;
+
+  const residentialDemand = Math.min(100, Math.max(-100, baseResidentialDemand * taxMultiplier + taxAdditiveModifier + weatherImpact.demandResidential));
+  const commercialDemand = Math.min(
+    100,
+    Math.max(-100, baseCommercialDemand * taxMultiplier + taxAdditiveModifier * 0.8 + weatherImpact.demandCommercial)
+  );
+  const industrialDemand = Math.min(
+    100,
+    Math.max(-100, baseIndustrialDemand * taxMultiplier + taxAdditiveModifier * 0.5 + weatherImpact.demandIndustrial)
+  );
 
   // Calculate income and expenses
   const income = Math.floor(population * taxRate * 0.1 + jobs * taxRate * 0.05);
@@ -1200,6 +1231,7 @@ function calculateStats(grid: Tile[][], size: number, budget: Budget, taxRate: n
   expenses += Math.floor(budget.parks.cost * budget.parks.funding / 100);
   expenses += Math.floor(budget.power.cost * budget.power.funding / 100);
   expenses += Math.floor(budget.water.cost * budget.water.funding / 100);
+  expenses = Math.floor(expenses * (weatherImpact.expenseMultiplier ?? 1));
 
   // Calculate ratings
   const avgPoliceCoverage = calculateAverageCoverage(services.police);
@@ -1626,7 +1658,7 @@ export function simulateTick(state: GameState): GameState {
   const newEffectiveTaxRate = state.effectiveTaxRate + taxRateDiff * 0.03;
 
   // Calculate stats (using lagged effectiveTaxRate for demand calculations)
-  const newStats = calculateStats(newGrid, size, newBudget, state.taxRate, newEffectiveTaxRate, services);
+  const newStats = calculateStats(newGrid, size, newBudget, state.taxRate, newEffectiveTaxRate, services, state.weather);
   newStats.money = state.stats.money;
 
   // Update money on month change
@@ -1634,17 +1666,15 @@ export function simulateTick(state: GameState): GameState {
   let newMonth = state.month;
   let newDay = state.day;
   let newTick = state.tick + 1;
-  
-  // Calculate visual hour for day/night cycle (much slower than game time)
-  // One full day/night cycle = 15 game days (450 ticks)
-  // This makes the cycle atmospheric rather than jarring
-  const totalTicks = ((state.year - 2024) * 12 * 30 * 30) + ((state.month - 1) * 30 * 30) + ((state.day - 1) * 30) + newTick;
-  const cycleLength = 450; // ticks per visual day (15 game days)
-  const newHour = Math.floor((totalTicks % cycleLength) / cycleLength * 24);
+  let advancedDay = false;
+  const newDayNightTick = (state.dayNightTick + 1) % DAY_NIGHT_CYCLE_TICKS;
+  const newHour = Math.floor(newDayNightTick / DAY_NIGHT_CYCLE_TICKS * 24);
+  let newWeather = state.weather ?? createInitialWeatherState(state.month);
 
-  if (newTick >= 30) {
+  if (newTick >= CALENDAR_TICKS_PER_DAY) {
     newTick = 0;
     newDay++;
+    advancedDay = true;
     // Weekly income/expense (deposit every 7 days at 1/4 monthly rate)
     // Only deposit when day changes to a multiple of 7
     if (newDay % 7 === 0) {
@@ -1660,6 +1690,10 @@ export function simulateTick(state: GameState): GameState {
   if (newMonth > 12) {
     newMonth = 1;
     newYear++;
+  }
+
+  if (advancedDay) {
+    newWeather = advanceWeatherState(newWeather, newMonth);
   }
 
   // Generate advisor messages
@@ -1697,6 +1731,7 @@ export function simulateTick(state: GameState): GameState {
     day: newDay,
     hour: newHour,
     tick: newTick,
+    dayNightTick: newDayNightTick,
     effectiveTaxRate: newEffectiveTaxRate,
     stats: newStats,
     budget: newBudget,
@@ -1704,6 +1739,7 @@ export function simulateTick(state: GameState): GameState {
     advisorMessages,
     notifications: newNotifications,
     history,
+    weather: newWeather,
   };
 }
 
