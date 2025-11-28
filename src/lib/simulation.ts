@@ -18,6 +18,10 @@ import {
   RESIDENTIAL_BUILDINGS,
   COMMERCIAL_BUILDINGS,
   INDUSTRIAL_BUILDINGS,
+  Season,
+  Weather,
+  WeatherType,
+  WeatherIntensity,
 } from '@/types/game';
 import { generateCityName, generateWaterName } from './names';
 
@@ -643,9 +647,141 @@ function createServiceCoverage(size: number): ServiceCoverage {
 }
 
 
+// Get season based on month
+function getSeason(month: number): Season {
+  if (month >= 3 && month <= 5) return 'spring';
+  if (month >= 6 && month <= 8) return 'summer';
+  if (month >= 9 && month <= 11) return 'fall';
+  return 'winter'; // 12, 1, 2
+}
+
+// Get weather economic modifiers
+function getWeatherEconomicModifier(weather: Weather): { incomeMultiplier: number; expenseMultiplier: number } {
+  let incomeMultiplier = 1.0;
+  let expenseMultiplier = 1.0;
+  
+  const intensityFactor = weather.intensity === 'light' ? 0.5 : weather.intensity === 'moderate' ? 1.0 : 1.5;
+  
+  switch (weather.type) {
+    case 'rain':
+      // Rain slightly reduces commercial activity but increases some expenses
+      incomeMultiplier = 1.0 - (0.02 * intensityFactor);
+      expenseMultiplier = 1.0 + (0.01 * intensityFactor); // Slightly higher maintenance
+      break;
+    case 'snow':
+      // Snow reduces activity more significantly and increases expenses
+      incomeMultiplier = 1.0 - (0.05 * intensityFactor);
+      expenseMultiplier = 1.0 + (0.03 * intensityFactor); // Snow removal, heating
+      break;
+    case 'lightning':
+      // Lightning can cause power issues, reducing income and increasing expenses
+      incomeMultiplier = 1.0 - (0.03 * intensityFactor);
+      expenseMultiplier = 1.0 + (0.02 * intensityFactor); // Power repairs
+      break;
+    case 'heat':
+      // Heat increases energy costs but can boost some commercial activity
+      incomeMultiplier = 1.0 + (0.01 * intensityFactor); // Slight boost to tourism/outdoor activities
+      expenseMultiplier = 1.0 + (0.02 * intensityFactor); // Higher AC costs
+      break;
+    case 'clear':
+    default:
+      // Clear weather has no economic impact
+      break;
+  }
+  
+  return { incomeMultiplier, expenseMultiplier };
+}
+
+// Calculate weather based on season
+function calculateWeather(month: number, currentWeather: Weather | null): Weather {
+  const season = getSeason(month);
+  
+  // If current weather is still active, continue it
+  if (currentWeather && currentWeather.duration > 0) {
+    return {
+      ...currentWeather,
+      duration: currentWeather.duration - 1,
+    };
+  }
+  
+  // Determine weather probabilities based on season
+  const weatherChances: Record<Season, Record<WeatherType, number>> = {
+    spring: {
+      clear: 0.5,
+      rain: 0.3,
+      snow: 0.05,
+      lightning: 0.1,
+      heat: 0.05,
+    },
+    summer: {
+      clear: 0.4,
+      rain: 0.2,
+      snow: 0.0,
+      lightning: 0.15,
+      heat: 0.25,
+    },
+    fall: {
+      clear: 0.5,
+      rain: 0.3,
+      snow: 0.05,
+      lightning: 0.1,
+      heat: 0.05,
+    },
+    winter: {
+      clear: 0.3,
+      rain: 0.1,
+      snow: 0.5,
+      lightning: 0.05,
+      heat: 0.05,
+    },
+  };
+  
+  const chances = weatherChances[season];
+  const rand = Math.random();
+  let cumulative = 0;
+  let selectedWeather: WeatherType = 'clear';
+  
+  for (const [weather, chance] of Object.entries(chances)) {
+    cumulative += chance;
+    if (rand <= cumulative) {
+      selectedWeather = weather as WeatherType;
+      break;
+    }
+  }
+  
+  // Determine intensity
+  let intensity: WeatherIntensity = 'light';
+  if (selectedWeather !== 'clear') {
+    const intensityRand = Math.random();
+    if (intensityRand < 0.4) intensity = 'light';
+    else if (intensityRand < 0.8) intensity = 'moderate';
+    else intensity = 'heavy';
+  }
+  
+  // Duration: 30-120 ticks (1-4 game days at 10 ticks/day)
+  const duration = selectedWeather === 'clear' ? 60 + Math.floor(Math.random() * 60) : 30 + Math.floor(Math.random() * 90);
+  
+  // Cloud coverage affects day length (0 = no effect, 1 = maximum effect)
+  let cloudCoverage = 0;
+  if (selectedWeather === 'rain' || selectedWeather === 'snow' || selectedWeather === 'lightning') {
+    cloudCoverage = intensity === 'light' ? 0.3 : intensity === 'moderate' ? 0.6 : 0.9;
+  } else if (selectedWeather === 'heat') {
+    cloudCoverage = 0.1; // Heat has minimal cloud coverage
+  }
+  
+  return {
+    season,
+    type: selectedWeather,
+    intensity,
+    duration,
+    cloudCoverage,
+  };
+}
+
 export function createInitialGameState(size: number = 60, cityName: string = 'New City'): GameState {
   const { grid, waterBodies } = generateTerrain(size);
   const adjacentCities = generateAdjacentCities();
+  const initialWeather = calculateWeather(1, null);
 
   return {
     grid,
@@ -670,6 +806,7 @@ export function createInitialGameState(size: number = 60, cityName: string = 'Ne
     disastersEnabled: true,
     adjacentCities,
     waterBodies,
+    weather: initialWeather,
   };
 }
 
@@ -1135,7 +1272,7 @@ function evolveBuilding(grid: Tile[][], x: number, y: number, services: ServiceC
 
 // Calculate city stats
 // effectiveTaxRate is the lagged tax rate used for demand calculations
-function calculateStats(grid: Tile[][], size: number, budget: Budget, taxRate: number, effectiveTaxRate: number, services: ServiceCoverage): Stats {
+function calculateStats(grid: Tile[][], size: number, budget: Budget, taxRate: number, effectiveTaxRate: number, services: ServiceCoverage, weather: Weather): Stats {
   let population = 0;
   let jobs = 0;
   let totalPollution = 0;
@@ -1218,7 +1355,7 @@ function calculateStats(grid: Tile[][], size: number, budget: Budget, taxRate: n
   const industrialDemand = Math.min(100, Math.max(-100, baseIndustrialDemand * taxMultiplier + taxAdditiveModifier * 0.5));
 
   // Calculate income and expenses
-  const income = Math.floor(population * taxRate * 0.1 + jobs * taxRate * 0.05);
+  let income = Math.floor(population * taxRate * 0.1 + jobs * taxRate * 0.05);
   
   let expenses = 0;
   expenses += Math.floor(budget.police.cost * budget.police.funding / 100);
@@ -1229,6 +1366,11 @@ function calculateStats(grid: Tile[][], size: number, budget: Budget, taxRate: n
   expenses += Math.floor(budget.parks.cost * budget.parks.funding / 100);
   expenses += Math.floor(budget.power.cost * budget.power.funding / 100);
   expenses += Math.floor(budget.water.cost * budget.water.funding / 100);
+  
+  // Apply weather economic effects (minor modifiers)
+  const weatherModifier = getWeatherEconomicModifier(weather);
+  income = Math.floor(income * weatherModifier.incomeMultiplier);
+  expenses = Math.floor(expenses * weatherModifier.expenseMultiplier);
 
   // Calculate ratings
   const avgPoliceCoverage = calculateAverageCoverage(services.police);
@@ -1671,8 +1813,11 @@ export function simulateTick(state: GameState): GameState {
   const taxRateDiff = state.taxRate - state.effectiveTaxRate;
   const newEffectiveTaxRate = state.effectiveTaxRate + taxRateDiff * 0.03;
 
+  // Update weather
+  const newWeather = calculateWeather(state.month, state.weather);
+  
   // Calculate stats (using lagged effectiveTaxRate for demand calculations)
-  const newStats = calculateStats(newGrid, size, newBudget, state.taxRate, newEffectiveTaxRate, services);
+  const newStats = calculateStats(newGrid, size, newBudget, state.taxRate, newEffectiveTaxRate, services, newWeather);
   newStats.money = state.stats.money;
 
   // Update money on month change
@@ -1681,14 +1826,24 @@ export function simulateTick(state: GameState): GameState {
   let newDay = state.day;
   let newTick = state.tick + 1;
   
+  // Speed up date passage: change from 30 ticks per day to 10 ticks per day
+  // This makes days pass 3x faster without affecting day/night cycle or animations
+  const TICKS_PER_DAY = 10;
+  
   // Calculate visual hour for day/night cycle (much slower than game time)
-  // One full day/night cycle = 15 game days (450 ticks)
+  // One full day/night cycle = 15 game days (150 ticks at 10 ticks/day)
   // This makes the cycle atmospheric rather than jarring
-  const totalTicks = ((state.year - 2024) * 12 * 30 * 30) + ((state.month - 1) * 30 * 30) + ((state.day - 1) * 30) + newTick;
-  const cycleLength = 450; // ticks per visual day (15 game days)
+  // Adjust day length based on season and cloud coverage
+  const season = getSeason(state.month);
+  const baseDayLength = season === 'winter' ? 0.85 : season === 'summer' ? 1.15 : 1.0; // Winter shorter days, summer longer
+  const cloudEffect = 1.0 - (newWeather.cloudCoverage * 0.2); // Clouds reduce effective day length by up to 20%
+  const adjustedDayLength = baseDayLength * cloudEffect;
+  
+  const totalTicks = ((state.year - 2024) * 12 * 30 * TICKS_PER_DAY) + ((state.month - 1) * 30 * TICKS_PER_DAY) + ((state.day - 1) * TICKS_PER_DAY) + newTick;
+  const cycleLength = 150 * adjustedDayLength; // Adjusted ticks per visual day
   const newHour = Math.floor((totalTicks % cycleLength) / cycleLength * 24);
 
-  if (newTick >= 30) {
+  if (newTick >= TICKS_PER_DAY) {
     newTick = 0;
     newDay++;
     // Weekly income/expense (deposit every 7 days at 1/4 monthly rate)
@@ -1750,6 +1905,7 @@ export function simulateTick(state: GameState): GameState {
     advisorMessages,
     notifications: newNotifications,
     history,
+    weather: newWeather,
   };
 }
 

@@ -92,3 +92,35 @@ export const OPPOSITE_DIRECTION: Record<CarDirection, CarDirection> = {
   south: 'north',
   west: 'east',
 };
+
+// Weather system constants
+export const CLOUD_PARTICLE_MAX_AGE = 15.0; // seconds - how long cloud particles last
+export const CLOUD_SPAWN_INTERVAL = 0.5; // seconds between cloud particles
+export const CLOUD_DRIFT_SPEED = 5; // pixels per second horizontal drift
+export const CLOUD_RISE_SPEED = 2; // pixels per second upward drift
+export const CLOUD_BASE_OPACITY = 0.4; // Base opacity of cloud particles
+export const CLOUD_PARTICLE_SIZE_MIN = 15; // Minimum cloud particle size
+export const CLOUD_PARTICLE_SIZE_MAX = 40; // Maximum cloud particle size
+export const CLOUD_MAX_PARTICLES = 80; // Maximum cloud particles on screen
+
+export const RAIN_PARTICLE_MAX_AGE = 0.5; // seconds - how long rain particles last
+export const RAIN_SPAWN_INTERVAL_LIGHT = 0.02; // seconds between rain particles (light)
+export const RAIN_SPAWN_INTERVAL_MODERATE = 0.01; // seconds between rain particles (moderate)
+export const RAIN_SPAWN_INTERVAL_HEAVY = 0.005; // seconds between rain particles (heavy)
+export const RAIN_FALL_SPEED = 400; // pixels per second downward
+export const RAIN_LENGTH_LIGHT = 8; // Rain drop length (light)
+export const RAIN_LENGTH_MODERATE = 12; // Rain drop length (moderate)
+export const RAIN_LENGTH_HEAVY = 16; // Rain drop length (heavy)
+
+export const SNOW_PARTICLE_MAX_AGE = 8.0; // seconds - how long snow particles last
+export const SNOW_SPAWN_INTERVAL_LIGHT = 0.05; // seconds between snow particles (light)
+export const SNOW_SPAWN_INTERVAL_MODERATE = 0.03; // seconds between snow particles (moderate)
+export const SNOW_SPAWN_INTERVAL_HEAVY = 0.015; // seconds between snow particles (heavy)
+export const SNOW_FALL_SPEED = 60; // pixels per second downward
+export const SNOW_DRIFT_SPEED = 20; // pixels per second horizontal drift
+export const SNOW_PARTICLE_SIZE_MIN = 2; // Minimum snow particle size
+export const SNOW_PARTICLE_SIZE_MAX = 6; // Maximum snow particle size
+export const SNOW_MAX_PARTICLES = 150; // Maximum snow particles on screen
+
+export const LIGHTNING_FLASH_DURATION = 0.1; // seconds - how long lightning flash lasts
+export const LIGHTNING_SPAWN_INTERVAL = 2.0; // seconds between lightning flashes (when lightning weather active)
