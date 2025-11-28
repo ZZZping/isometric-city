@@ -5,7 +5,6 @@ import { useGame } from '@/context/GameContext';
 import { Tile } from '@/types/game';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Slider } from '@/components/ui/slider';
 import { Separator } from '@/components/ui/separator';
 import {
@@ -21,12 +20,19 @@ import {
   EnvironmentIcon,
   CloseIcon,
 } from '@/components/ui/Icons';
+import { WeatherBadge } from '@/components/game/WeatherBadge';
 
 // Sun/Moon icon for time of day
-function TimeOfDayIcon({ hour }: { hour: number }) {
-  const isNight = hour < 6 || hour >= 20;
-  const isDawn = hour >= 6 && hour < 8;
-  const isDusk = hour >= 18 && hour < 20;
+function TimeOfDayIcon({ hour, daylight }: { hour: number; daylight?: { sunrise: number; sunset: number } }) {
+  const sunrise = daylight?.sunrise ?? 6;
+  const sunset = daylight?.sunset ?? 19;
+  const dawnStart = sunrise - 1.5;
+  const duskStart = sunset - 1.5;
+  const nightEnd = sunrise - 0.2;
+  const nightStart = sunset + 0.2;
+  const isNight = hour < dawnStart || hour >= nightStart;
+  const isDawn = hour >= dawnStart && hour < nightEnd;
+  const isDusk = hour >= duskStart && hour < nightStart;
 
   if (isNight) {
     return (
@@ -76,7 +82,7 @@ export function MobileTopBar({
   onCloseTile: () => void;
 }) {
   const { state, setSpeed, setTaxRate, isSaving } = useGame();
-  const { stats, year, month, hour, speed, taxRate, cityName } = state;
+  const { stats, year, month, hour, speed, taxRate, cityName, weather } = state;
   const [showDetails, setShowDetails] = useState(false);
 
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -102,10 +108,11 @@ export function MobileTopBar({
               </div>
               <div className="flex items-center gap-1 text-muted-foreground text-[10px] font-mono">
                 <span>{monthNames[month - 1]} {year}</span>
-                <TimeOfDayIcon hour={hour} />
+                <TimeOfDayIcon hour={hour} daylight={weather?.daylight} />
               </div>
             </button>
           </div>
+          <WeatherBadge weather={weather} compact />
 
           {/* Center: Speed controls */}
           <div className="flex items-center gap-0.5 bg-secondary rounded-md p-0.5">

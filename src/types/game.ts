@@ -75,6 +75,33 @@ export type BuildingType =
 
 export type ZoneType = 'none' | 'residential' | 'commercial' | 'industrial';
 
+export type Season = 'winter' | 'spring' | 'summer' | 'autumn';
+
+export type WeatherCondition = 'clear' | 'rain' | 'snow' | 'lightning' | 'heat';
+
+export type WeatherIntensity = 'light' | 'moderate' | 'heavy';
+
+export interface DaylightWindow {
+  sunrise: number;
+  sunset: number;
+}
+
+export interface WeatherState {
+  season: Season;
+  condition: WeatherCondition;
+  intensity: WeatherIntensity;
+  temperatureC: number;
+  humidity: number; // 0-100
+  windSpeed: number; // km/h equivalent
+  cloudCoverage: number; // 0-1
+  precipitationLevel: number; // 0-1
+  groundWetness: number; // 0-1
+  snowCoverage: number; // 0-1
+  lightningRisk: number; // 0-1
+  daylight: DaylightWindow;
+  stabilityDays: number;
+}
+
 export type Tool =
   | 'select'
   | 'bulldoze'
@@ -313,6 +340,7 @@ export interface GameState {
   month: number;
   day: number;
   hour: number; // 0-23 for day/night cycle
+  weather: WeatherState;
   tick: number;
   speed: 0 | 1 | 2 | 3;
   selectedTool: Tool;

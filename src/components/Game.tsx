@@ -159,9 +159,39 @@ import {
 } from '@/components/game/overlays';
 import { OverlayModeToggle } from '@/components/game/OverlayModeToggle';
 import { Sidebar } from '@/components/game/Sidebar';
+import { WeatherBadge } from '@/components/game/WeatherBadge';
 
 // HEIGHT_RATIO is still used locally in some places
 const HEIGHT_RATIO = 0.60;
+
+type WeatherCloud = {
+  x: number;
+  y: number;
+  speed: number;
+  width: number;
+  height: number;
+  opacity: number;
+  drift: number;
+};
+
+type WeatherParticle = {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  maxLife: number;
+  type: 'rain' | 'snow';
+  size: number;
+};
+
+type LightningBolt = {
+  x: number;
+  life: number;
+  duration: number;
+  sway: number;
+  intensity: number;
+};
 
 const EVENT_ICON_MAP: Record<string, React.ReactNode> = {
   fire: <FireIcon size={16} />,
@@ -204,10 +234,16 @@ const ADVISOR_ICON_MAP: Record<string, React.ReactNode> = {
 };
 
 // Sun/Moon icon for time of day
-const TimeOfDayIcon = ({ hour }: { hour: number }) => {
-  const isNight = hour < 6 || hour >= 20;
-  const isDawn = hour >= 6 && hour < 8;
-  const isDusk = hour >= 18 && hour < 20;
+const TimeOfDayIcon = ({ hour, daylight }: { hour: number; daylight?: { sunrise: number; sunset: number } }) => {
+  const sunrise = daylight?.sunrise ?? 6;
+  const sunset = daylight?.sunset ?? 19;
+  const dawnStart = sunrise - 1.5;
+  const duskStart = sunset - 1.5;
+  const nightEnd = sunrise - 0.3;
+  const nightStart = sunset + 0.3;
+  const isNight = hour < dawnStart || hour >= nightStart;
+  const isDawn = hour >= dawnStart && hour < nightEnd;
+  const isDusk = hour >= duskStart && hour < nightStart;
   
   if (isNight) {
     // Moon icon
@@ -236,7 +272,7 @@ const TimeOfDayIcon = ({ hour }: { hour: number }) => {
 // Memoized TopBar Component
 const TopBar = React.memo(function TopBar() {
   const { state, setSpeed, setTaxRate, isSaving } = useGame();
-  const { stats, year, month, day, hour, speed, taxRate, cityName } = state;
+  const { stats, year, month, day, hour, speed, taxRate, cityName, weather } = state;
   
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const formattedDate = `${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}-${year}`;
@@ -260,9 +296,11 @@ const TopBar = React.memo(function TopBar() {
                 <p>{formattedDate}</p>
               </TooltipContent>
             </Tooltip>
-            <TimeOfDayIcon hour={hour} />
+            <TimeOfDayIcon hour={hour} daylight={weather?.daylight} />
           </div>
         </div>
+        
+        <WeatherBadge weather={weather} />
         
         <div className="flex items-center gap-1 bg-secondary rounded-md p-1">
           {[0, 1, 2, 3].map(s => (
@@ -1844,9 +1882,10 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
   onViewportChange?: (viewport: { offset: { x: number; y: number }; zoom: number; canvasSize: { width: number; height: number } }) => void;
 }) {
   const { state, placeAtTile, connectToCity, currentSpritePack } = useGame();
-  const { grid, gridSize, selectedTool, speed, adjacentCities, waterBodies, hour } = state;
+  const { grid, gridSize, selectedTool, speed, adjacentCities, waterBodies, hour, weather } = state;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const carsCanvasRef = useRef<HTMLCanvasElement>(null);
+  const weatherCanvasRef = useRef<HTMLCanvasElement>(null);
   const lightingCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [offset, setOffset] = useState({ x: isMobile ? 200 : 620, y: isMobile ? 100 : 160 });
@@ -1902,6 +1941,17 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
 
   // Navigation light flash timer for planes/helicopters/boats at night
   const navLightFlashTimerRef = useRef(0);
+  const weatherVisualsRef = useRef<{
+    clouds: WeatherCloud[];
+    precipitation: WeatherParticle[];
+    lightning: LightningBolt[];
+    heatPhase: number;
+  }>({
+    clouds: [],
+    precipitation: [],
+    lightning: [],
+    heatPhase: 0,
+  });
 
   // Firework system refs
   const fireworksRef = useRef<Firework[]>([]);
@@ -5190,6 +5240,175 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
     ctx.restore();
   }, []);
 
+  const updateWeatherVisuals = useCallback((delta: number) => {
+    const canvas = weatherCanvasRef.current;
+    if (!canvas) return;
+    const visuals = weatherVisualsRef.current;
+    const dpr = window.devicePixelRatio || 1;
+    const cssWidth = canvasSize.width > 0 ? canvasSize.width / dpr : canvas.width / dpr;
+    const cssHeight = canvasSize.height > 0 ? canvasSize.height / dpr : canvas.height / dpr;
+    if (!cssWidth || !cssHeight) return;
+
+    const condition = weather?.condition ?? 'clear';
+    const intensityFactor = weather?.intensity === 'heavy' ? 1.4 : weather?.intensity === 'moderate' ? 1 : 0.6;
+    const precipitationLevel = weather?.precipitationLevel ?? 0;
+    const cloudTarget = Math.round((weather?.cloudCoverage ?? 0) * 12);
+
+    while (visuals.clouds.length < cloudTarget) {
+      visuals.clouds.push({
+        x: Math.random() * (cssWidth + 200) - 100,
+        y: Math.random() * cssHeight * 0.4,
+        speed: 8 + Math.random() * 12,
+        width: 140 + Math.random() * 200,
+        height: 30 + Math.random() * 20,
+        opacity: 0.18 + (weather?.cloudCoverage ?? 0) * 0.3,
+        drift: (Math.random() - 0.5) * 0.4,
+      });
+    }
+    while (visuals.clouds.length > cloudTarget) {
+      visuals.clouds.pop();
+    }
+    for (const cloud of visuals.clouds) {
+      cloud.x -= cloud.speed * delta * (condition === 'heat' ? 0.6 : 1);
+      cloud.y += cloud.drift * 10 * delta;
+      if (cloud.x + cloud.width < -140) {
+        cloud.x = cssWidth + Math.random() * 140;
+        cloud.y = Math.random() * cssHeight * 0.5;
+        cloud.opacity = 0.18 + (weather?.cloudCoverage ?? 0) * 0.3;
+      }
+    }
+
+    const precipTarget = Math.round(precipitationLevel * (condition === 'snow' ? 200 : 320));
+    while (visuals.precipitation.length < precipTarget) {
+      const type: WeatherParticle['type'] = condition === 'snow' ? 'snow' : 'rain';
+      const speedY = type === 'snow' ? (25 + Math.random() * 20) : (180 + Math.random() * 120);
+      const speedX = type === 'snow' ? (Math.random() - 0.5) * 30 : -60;
+      visuals.precipitation.push({
+        x: Math.random() * (cssWidth + 60) - 30,
+        y: Math.random() * (-cssHeight * 0.2),
+        vx: speedX,
+        vy: speedY,
+        life: 0,
+        maxLife: type === 'snow' ? 4 : 1.6,
+        type,
+        size: type === 'snow' ? 1 + Math.random() * 1.5 : 1,
+      });
+    }
+    visuals.precipitation = visuals.precipitation.filter((particle) => {
+      particle.x += (particle.vx / 60) * (delta * 60);
+      particle.y += (particle.vy / 60) * (delta * 60);
+      particle.life += delta;
+      return particle.y <= cssHeight + 40 && particle.life <= particle.maxLife;
+    });
+    if (precipTarget === 0 && visuals.precipitation.length > 50) {
+      visuals.precipitation.splice(0, 50);
+    }
+
+    visuals.lightning = visuals.lightning.filter((bolt) => {
+      bolt.life += delta;
+      return bolt.life < bolt.duration;
+    });
+    if (condition === 'lightning' && Math.random() < delta * (0.35 * intensityFactor)) {
+      visuals.lightning.push({
+        x: Math.random() * cssWidth,
+        life: 0,
+        duration: 0.25 + Math.random() * 0.2,
+        sway: (Math.random() - 0.5) * 60,
+        intensity: 0.8 + Math.random() * 0.4,
+      });
+    }
+
+    if (weather?.condition === 'heat') {
+      visuals.heatPhase = (visuals.heatPhase + delta * 0.35) % 1;
+    } else {
+      visuals.heatPhase = 0;
+    }
+  }, [canvasSize.height, canvasSize.width, weather]);
+
+  const drawWeather = useCallback(() => {
+    const canvas = weatherCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const dpr = window.devicePixelRatio || 1;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    ctx.scale(dpr, dpr);
+
+    const cssWidth = canvas.width / dpr;
+    const cssHeight = canvas.height / dpr;
+    const visuals = weatherVisualsRef.current;
+    const condition = weather?.condition ?? 'clear';
+    const intensityFactor = weather?.intensity === 'heavy' ? 1.4 : weather?.intensity === 'moderate' ? 1 : 0.6;
+
+    for (const cloud of visuals.clouds) {
+      const gradient = ctx.createLinearGradient(cloud.x, cloud.y, cloud.x + cloud.width, cloud.y + cloud.height);
+      gradient.addColorStop(0, 'rgba(245,248,250,0.05)');
+      gradient.addColorStop(1, 'rgba(205,215,225,0.35)');
+      ctx.fillStyle = gradient;
+      ctx.globalAlpha = cloud.opacity;
+      ctx.beginPath();
+      ctx.ellipse(cloud.x, cloud.y, cloud.width / 2, cloud.height / 2, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    if (visuals.precipitation.length > 0) {
+      if (condition === 'snow') {
+        ctx.fillStyle = 'rgba(235, 240, 250, 0.8)';
+        for (const flake of visuals.precipitation) {
+          ctx.beginPath();
+          ctx.arc(flake.x, flake.y, flake.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else {
+        ctx.strokeStyle = 'rgba(175, 195, 225, 0.45)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (const drop of visuals.precipitation) {
+          ctx.moveTo(drop.x, drop.y);
+          ctx.lineTo(drop.x + drop.vx * 0.05, drop.y + drop.vy * 0.05);
+        }
+        ctx.stroke();
+      }
+    }
+
+    if (visuals.lightning.length > 0) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'screen';
+      for (const bolt of visuals.lightning) {
+        const alpha = 1 - bolt.life / bolt.duration;
+        ctx.strokeStyle = `rgba(255,255,255,${0.65 * alpha})`;
+        ctx.lineWidth = 2 + bolt.intensity * 2;
+        ctx.beginPath();
+        ctx.moveTo(bolt.x, 0);
+        ctx.lineTo(bolt.x + bolt.sway * 0.3, cssHeight * 0.6);
+        ctx.lineTo(bolt.x + bolt.sway * 0.1, cssHeight);
+        ctx.stroke();
+        ctx.fillStyle = `rgba(255,255,255,${0.08 * alpha})`;
+        ctx.fillRect(0, 0, cssWidth, cssHeight);
+      }
+      ctx.restore();
+    }
+
+    if (weather?.condition === 'heat') {
+      const gradient = ctx.createLinearGradient(0, cssHeight * 0.6, 0, cssHeight);
+      gradient.addColorStop(0, 'rgba(255,210,150,0)');
+      gradient.addColorStop(1, `rgba(255,190,120,${0.18 * intensityFactor})`);
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, cssHeight * 0.6, cssWidth, cssHeight * 0.4);
+      ctx.globalAlpha = 0.12 * intensityFactor;
+      for (let i = 0; i < 5; i++) {
+        const y = cssHeight * 0.55 + Math.sin((visuals.heatPhase + i * 0.2) * Math.PI * 2) * 6 + i * 12;
+        ctx.fillRect(0, y, cssWidth, 2);
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    ctx.restore();
+  }, [canvasSize.height, canvasSize.width, weather]);
+
   // Draw emergency vehicles (fire trucks and police cars)
   const drawEmergencyVehicles = useCallback((ctx: CanvasRenderingContext2D) => {
     const { offset: currentOffset, zoom: currentZoom, grid: currentGrid, gridSize: currentGridSize } = worldStateRef.current;
@@ -5668,6 +5887,10 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
         if (carsCanvasRef.current) {
           carsCanvasRef.current.style.width = `${rect.width}px`;
           carsCanvasRef.current.style.height = `${rect.height}px`;
+        }
+        if (weatherCanvasRef.current) {
+          weatherCanvasRef.current.style.width = `${rect.width}px`;
+          weatherCanvasRef.current.style.height = `${rect.height}px`;
         }
         if (lightingCanvasRef.current) {
           lightingCanvasRef.current.style.width = `${rect.width}px`;
@@ -6345,6 +6568,35 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
       }
     }
     
+    function drawRoadWeatherOverlay(ctx: CanvasRenderingContext2D, x: number, y: number) {
+      if (!weather) return;
+      const snowLevel = weather.snowCoverage ?? 0;
+      const wetnessLevel = weather.groundWetness ?? 0;
+      if (snowLevel <= 0.05 && wetnessLevel <= 0.1) {
+        return;
+      }
+      const w = TILE_WIDTH;
+      const h = TILE_HEIGHT;
+      const cx = x + w / 2;
+      const cy = y + h / 2;
+      ctx.save();
+      if (snowLevel > wetnessLevel) {
+        ctx.globalAlpha = Math.min(0.6, 0.2 + snowLevel * 0.6);
+        ctx.fillStyle = '#f6f9ff';
+      } else {
+        ctx.globalAlpha = Math.min(0.45, wetnessLevel * 0.5);
+        ctx.fillStyle = 'rgba(110, 150, 190, 0.6)';
+      }
+      ctx.beginPath();
+      ctx.moveTo(cx, y + h * 0.18);
+      ctx.lineTo(x + w * 0.82, cy);
+      ctx.lineTo(cx, y + h * 0.82);
+      ctx.lineTo(x + w * 0.18, cy);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+    
     // Draw building sprite
     function drawBuilding(ctx: CanvasRenderingContext2D, x: number, y: number, tile: Tile) {
       const buildingType = tile.building.type;
@@ -6354,6 +6606,7 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
       // Handle roads separately with adjacency
       if (buildingType === 'road') {
         drawRoad(ctx, x, y, tile.x, tile.y);
+        drawRoadWeatherOverlay(ctx, x, y);
         return;
       }
       
@@ -7171,12 +7424,14 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
         updateBoats(delta); // Update boats (marina/pier required)
         updateFireworks(delta, hour); // Update fireworks (nighttime only)
         updateSmog(delta); // Update factory smog particles
+        updateWeatherVisuals(delta); // Update weather overlays
         navLightFlashTimerRef.current += delta * 3; // Update nav light flash timer
       }
       drawCars(ctx);
       drawPedestrians(ctx); // Draw pedestrians (zoom-gated)
       drawBoats(ctx); // Draw boats on water
       drawSmog(ctx); // Draw factory smog (above ground, below aircraft)
+      drawWeather(); // Draw clouds/rain/snow overlays
       drawEmergencyVehicles(ctx); // Draw emergency vehicles!
       drawIncidentIndicators(ctx, delta); // Draw fire/crime incident indicators!
       drawHelicopters(ctx); // Draw helicopters (below planes, above ground)
@@ -7186,7 +7441,7 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
     
     animationFrameId = requestAnimationFrame(render);
     return () => cancelAnimationFrame(animationFrameId);
-  }, [canvasSize.width, canvasSize.height, updateCars, drawCars, spawnCrimeIncidents, updateCrimeIncidents, updateEmergencyVehicles, drawEmergencyVehicles, updatePedestrians, drawPedestrians, updateAirplanes, drawAirplanes, updateHelicopters, drawHelicopters, updateBoats, drawBoats, drawIncidentIndicators, updateFireworks, drawFireworks, updateSmog, drawSmog, hour, isMobile]);
+  }, [canvasSize.width, canvasSize.height, updateCars, drawCars, spawnCrimeIncidents, updateCrimeIncidents, updateEmergencyVehicles, drawEmergencyVehicles, updatePedestrians, drawPedestrians, updateAirplanes, drawAirplanes, updateHelicopters, drawHelicopters, updateBoats, drawBoats, drawIncidentIndicators, updateFireworks, drawFireworks, updateSmog, drawSmog, updateWeatherVisuals, drawWeather, hour, isMobile]);
   
   // Day/Night cycle lighting rendering - optimized for performance
   useEffect(() => {
@@ -7197,16 +7452,24 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
     
     const dpr = window.devicePixelRatio || 1;
     
-    // Calculate darkness based on hour (0-23)
-    // Dawn: 5-7, Day: 7-18, Dusk: 18-20, Night: 20-5
-    const getDarkness = (h: number): number => {
-      if (h >= 7 && h < 18) return 0; // Full daylight
-      if (h >= 5 && h < 7) return 1 - (h - 5) / 2; // Dawn transition
-      if (h >= 18 && h < 20) return (h - 18) / 2; // Dusk transition
-      return 1; // Night
+    // Calculate darkness based on dynamic sunrise/sunset
+    const sunrise = weather?.daylight.sunrise ?? 6;
+    const sunset = weather?.daylight.sunset ?? 19;
+    const dawnStart = sunrise - 1.5;
+    const duskStart = sunset - 1.5;
+    const nightEnd = sunrise;
+    const nightStart = sunset + 1.5;
+    const getBaseDarkness = (h: number): number => {
+      if (h >= sunrise && h < sunset) return 0;
+      if (h >= dawnStart && h < sunrise) return 1 - (h - dawnStart) / (sunrise - dawnStart);
+      if (h >= sunset && h < duskStart + 1.5) return (h - sunset) / (nightStart - sunset);
+      if (h >= nightStart || h < dawnStart) return 1;
+      return 1;
     };
     
-    const darkness = getDarkness(hour);
+    const baseDarkness = getBaseDarkness(hour);
+    const weatherShade = (weather?.cloudCoverage ?? 0) * (weather?.condition === 'clear' ? 0.05 : 0.25);
+    const darkness = Math.min(1, baseDarkness + weatherShade);
     
     // Clear canvas first
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -7219,13 +7482,13 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
     // This significantly reduces CPU usage on mobile devices
     if (isMobile && darkness > 0) {
       const getAmbientColor = (h: number): { r: number; g: number; b: number } => {
-        if (h >= 7 && h < 18) return { r: 255, g: 255, b: 255 };
-        if (h >= 5 && h < 7) {
-          const t = (h - 5) / 2;
+        if (h >= sunrise && h < sunset) return { r: 255, g: 255, b: 255 };
+        if (h >= dawnStart && h < sunrise) {
+          const t = (h - dawnStart) / (sunrise - dawnStart);
           return { r: Math.round(60 + 40 * t), g: Math.round(40 + 30 * t), b: Math.round(70 + 20 * t) };
         }
-        if (h >= 18 && h < 20) {
-          const t = (h - 18) / 2;
+        if (h >= sunset && h < nightStart) {
+          const t = (h - sunset) / (nightStart - sunset);
           return { r: Math.round(100 - 40 * t), g: Math.round(70 - 30 * t), b: Math.round(90 - 20 * t) };
         }
         return { r: 20, g: 30, b: 60 };
@@ -7239,13 +7502,13 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
     
     // Get ambient color based on time
     const getAmbientColor = (h: number): { r: number; g: number; b: number } => {
-      if (h >= 7 && h < 18) return { r: 255, g: 255, b: 255 };
-      if (h >= 5 && h < 7) {
-        const t = (h - 5) / 2;
+      if (h >= sunrise && h < sunset) return { r: 255, g: 255, b: 255 };
+      if (h >= dawnStart && h < sunrise) {
+        const t = (h - dawnStart) / (sunrise - dawnStart);
         return { r: Math.round(60 + 40 * t), g: Math.round(40 + 30 * t), b: Math.round(70 + 20 * t) };
       }
-      if (h >= 18 && h < 20) {
-        const t = (h - 18) / 2;
+      if (h >= sunset && h < nightStart) {
+        const t = (h - sunset) / (nightStart - sunset);
         return { r: Math.round(100 - 40 * t), g: Math.round(70 - 30 * t), b: Math.round(90 - 20 * t) };
       }
       return { r: 20, g: 30, b: 60 };
@@ -7449,7 +7712,7 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
     ctx.restore();
     ctx.globalCompositeOperation = 'source-over';
     
-  }, [grid, gridSize, hour, offset, zoom, canvasSize.width, canvasSize.height, isMobile]);
+  }, [grid, gridSize, hour, offset, zoom, canvasSize.width, canvasSize.height, isMobile, weather]);
   
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button === 1 || (e.button === 0 && e.altKey)) {
@@ -7899,6 +8162,12 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
       />
       <canvas
         ref={carsCanvasRef}
+        width={canvasSize.width}
+        height={canvasSize.height}
+        className="absolute top-0 left-0 pointer-events-none"
+      />
+      <canvas
+        ref={weatherCanvasRef}
         width={canvasSize.width}
         height={canvasSize.height}
         className="absolute top-0 left-0 pointer-events-none"

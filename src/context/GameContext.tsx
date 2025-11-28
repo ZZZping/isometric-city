@@ -12,6 +12,7 @@ import {
 } from '@/types/game';
 import {
   bulldozeTile,
+  createDefaultWeatherState,
   createInitialGameState,
   placeBuilding,
   placeSubway,
@@ -150,6 +151,17 @@ function loadGameState(): GameState | null {
         }
         if (!parsed.waterBodies) {
           parsed.waterBodies = [];
+        }
+        if (!parsed.weather) {
+          parsed.weather = createDefaultWeatherState(parsed.month ?? 1);
+        } else {
+          const fallbackWeather = createDefaultWeatherState(parsed.month ?? 1);
+          parsed.weather = {
+            ...fallbackWeather,
+            ...parsed.weather,
+            daylight: parsed.weather.daylight ?? fallbackWeather.daylight,
+            stabilityDays: parsed.weather.stabilityDays ?? fallbackWeather.stabilityDays,
+          };
         }
         // Ensure hour exists for day/night cycle
         if (parsed.hour === undefined) {
@@ -559,6 +571,17 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         }
         if (!parsed.waterBodies) {
           parsed.waterBodies = [];
+        }
+        if (!parsed.weather) {
+          parsed.weather = createDefaultWeatherState(parsed.month ?? 1);
+        } else {
+          const fallbackWeather = createDefaultWeatherState(parsed.month ?? 1);
+          parsed.weather = {
+            ...fallbackWeather,
+            ...parsed.weather,
+            daylight: parsed.weather.daylight ?? fallbackWeather.daylight,
+            stabilityDays: parsed.weather.stabilityDays ?? fallbackWeather.stabilityDays,
+          };
         }
         // Ensure effectiveTaxRate exists for lagging tax effect
         if (parsed.effectiveTaxRate === undefined) {
