@@ -3,7 +3,7 @@
  * Extracted from Game.tsx for better code organization.
  */
 
-import { Tile, ZoneType } from '@/types/game';
+import { MAX_TERRAIN_ELEVATION, Tile, ZoneType } from '@/types/game';
 import { TILE_WIDTH, TILE_HEIGHT } from './types';
 
 // ============================================================================
@@ -77,11 +77,51 @@ export const GREY_TILE_COLORS: TileColorScheme = {
   stroke: '#374151',
 };
 
+const PEAK_TILE_COLORS: TileColorScheme = {
+  top: '#9ca3af',
+  left: '#6b7280',
+  right: '#cbd5e1',
+  stroke: '#4b5563',
+};
+
 /** Beach/sidewalk colors */
 export const BEACH_COLORS = {
   fill: '#d4a574',
   curb: '#b8956a',
 } as const;
+
+// ============================================================================
+// Color Helpers
+// ============================================================================
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const normalized = hex.replace('#', '');
+  const bigint = parseInt(normalized, 16);
+  return {
+    r: (bigint >> 16) & 255,
+    g: (bigint >> 8) & 255,
+    b: bigint & 255,
+  };
+}
+
+function mixChannel(start: number, end: number, t: number): number {
+  return Math.round(start + (end - start) * t);
+}
+
+function mixColors(base: string, target: string, t: number): string {
+  const start = hexToRgb(base);
+  const end = hexToRgb(target);
+  const clampedT = Math.max(0, Math.min(1, t));
+  const r = mixChannel(start.r, end.r, clampedT);
+  const g = mixChannel(start.g, end.g, clampedT);
+  const b = mixChannel(start.b, end.b, clampedT);
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
+
+function getElevationOffset(tile: Tile): number {
+  const elevation = tile.elevation ?? 0;
+  return elevation * TILE_HEIGHT * 0.6;
+}
 
 // ============================================================================
 // Geometry Helpers
@@ -167,10 +207,46 @@ export function drawGreenBaseTile(
   tile: Tile,
   currentZoom: number
 ): void {
-  const colors = ZONE_COLORS[tile.zone];
+  const elevationRatio = Math.min((tile.elevation ?? 0) / MAX_TERRAIN_ELEVATION, 1);
+  const baseColors = ZONE_COLORS[tile.zone];
+  const blendedColors: TileColorScheme = {
+    top: mixColors(baseColors.top, PEAK_TILE_COLORS.top, elevationRatio),
+    left: mixColors(baseColors.left, PEAK_TILE_COLORS.left, elevationRatio),
+    right: mixColors(baseColors.right, PEAK_TILE_COLORS.right, elevationRatio),
+    stroke: mixColors(baseColors.stroke, PEAK_TILE_COLORS.stroke, elevationRatio),
+  };
+  const elevationOffset = getElevationOffset(tile);
+  const topCorners = getDiamondCorners(x, y);
+  const baseCorners = getDiamondCorners(x, y + elevationOffset);
 
-  // Draw the base diamond with stroke only when zoomed in
-  drawIsometricDiamond(ctx, x, y, colors, {
+  if (elevationOffset > 0) {
+    const shadeStrength = 0.35 + elevationRatio * 0.25;
+    const rightShade = mixColors(blendedColors.right, '#111827', shadeStrength);
+    const leftShade = mixColors(blendedColors.left, '#0f172a', shadeStrength);
+
+    // Right/front face
+    ctx.fillStyle = rightShade;
+    ctx.beginPath();
+    ctx.moveTo(topCorners.right.x, topCorners.right.y);
+    ctx.lineTo(topCorners.bottom.x, topCorners.bottom.y);
+    ctx.lineTo(baseCorners.bottom.x, baseCorners.bottom.y);
+    ctx.lineTo(baseCorners.right.x, baseCorners.right.y);
+    ctx.closePath();
+    ctx.fill();
+
+    // Left/front face
+    ctx.fillStyle = leftShade;
+    ctx.beginPath();
+    ctx.moveTo(topCorners.left.x, topCorners.left.y);
+    ctx.lineTo(topCorners.bottom.x, topCorners.bottom.y);
+    ctx.lineTo(baseCorners.bottom.x, baseCorners.bottom.y);
+    ctx.lineTo(baseCorners.left.x, baseCorners.left.y);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Draw the elevated top diamond with stroke only when zoomed in
+  drawIsometricDiamond(ctx, x, y, blendedColors, {
     drawStroke: currentZoom >= 0.6,
     strokeWidth: 0.5,
   });
@@ -204,7 +280,42 @@ export function drawGreyBaseTile(
   _tile: Tile,
   currentZoom: number
 ): void {
-  drawIsometricDiamond(ctx, x, y, GREY_TILE_COLORS, {
+  const elevationOffset = getElevationOffset(_tile);
+  const elevationRatio = Math.min((_tile.elevation ?? 0) / MAX_TERRAIN_ELEVATION, 1);
+  const blendedColors: TileColorScheme = {
+    top: mixColors(GREY_TILE_COLORS.top, PEAK_TILE_COLORS.top, elevationRatio),
+    left: mixColors(GREY_TILE_COLORS.left, PEAK_TILE_COLORS.left, elevationRatio),
+    right: mixColors(GREY_TILE_COLORS.right, PEAK_TILE_COLORS.right, elevationRatio),
+    stroke: mixColors(GREY_TILE_COLORS.stroke, PEAK_TILE_COLORS.stroke, elevationRatio),
+  };
+  const topCorners = getDiamondCorners(x, y);
+  const baseCorners = getDiamondCorners(x, y + elevationOffset);
+
+  if (elevationOffset > 0) {
+    const shadeStrength = 0.35 + elevationRatio * 0.25;
+    const rightShade = mixColors(blendedColors.right, '#111827', shadeStrength);
+    const leftShade = mixColors(blendedColors.left, '#0f172a', shadeStrength);
+
+    ctx.fillStyle = rightShade;
+    ctx.beginPath();
+    ctx.moveTo(topCorners.right.x, topCorners.right.y);
+    ctx.lineTo(topCorners.bottom.x, topCorners.bottom.y);
+    ctx.lineTo(baseCorners.bottom.x, baseCorners.bottom.y);
+    ctx.lineTo(baseCorners.right.x, baseCorners.right.y);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = leftShade;
+    ctx.beginPath();
+    ctx.moveTo(topCorners.left.x, topCorners.left.y);
+    ctx.lineTo(topCorners.bottom.x, topCorners.bottom.y);
+    ctx.lineTo(baseCorners.bottom.x, baseCorners.bottom.y);
+    ctx.lineTo(baseCorners.left.x, baseCorners.left.y);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  drawIsometricDiamond(ctx, x, y, blendedColors, {
     drawStroke: currentZoom >= 0.6,
     strokeWidth: 0.5,
   });

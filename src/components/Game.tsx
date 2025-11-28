@@ -5790,15 +5790,15 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
         const y = sum - x;
         if (y < 0 || y >= gridSize) continue;
         
-        const { screenX, screenY } = gridToScreen(x, y, 0, 0);
-        
+        const tile = grid[y][x];
+        const { screenX, screenY } = gridToScreen(x, y, 0, 0, tile.elevation);
+
         // Viewport culling
         if (screenX + TILE_WIDTH < viewLeft || screenX > viewRight ||
             screenY + TILE_HEIGHT * 4 < viewTop || screenY > viewBottom) {
           continue;
         }
-        
-        const tile = grid[y][x];
+
         const isHovered = hoveredTile?.x === x && hoveredTile?.y === y;
         
         // Check if this tile is selected or part of a selected multi-tile building

@@ -19,6 +19,7 @@ import {
   RESIDENTIAL_BUILDINGS,
   COMMERCIAL_BUILDINGS,
   INDUSTRIAL_BUILDINGS,
+  MAX_TERRAIN_ELEVATION,
 } from '@/types/game';
 import { generateCityName, generateWaterName } from './names';
 
@@ -211,6 +212,7 @@ function generateLakes(grid: Tile[][], size: number, seed: number): WaterBody[] 
     // Apply lake tiles to grid
     for (const tile of lakeTiles) {
       grid[tile.y][tile.x].building = createBuilding('water');
+      grid[tile.y][tile.x].elevation = 0; // Keep water level flat
       grid[tile.y][tile.x].landValue = 60; // Water increases nearby land value
     }
     
@@ -298,6 +300,7 @@ function generateOceans(grid: Tile[][], size: number, seed: number): WaterBody[]
         
         if (x >= 0 && x < size && y >= 0 && y < size && grid[y][x].building.type !== 'water') {
           grid[y][x].building = createBuilding('water');
+          grid[y][x].elevation = 0;
           grid[y][x].landValue = 60;
           tiles.push({ x, y });
         }
@@ -400,6 +403,36 @@ function generateAdjacentCities(): AdjacentCity[] {
 }
 
 // Generate terrain - grass with scattered trees, lakes, and oceans
+function generateHills(grid: Tile[][], size: number): void {
+  const hillCount = Math.floor(Math.random() * 4); // 0-3 hills
+
+  for (let i = 0; i < hillCount; i++) {
+    const diameter = 10 + Math.floor(Math.random() * 6); // 10-15 tiles
+    const radius = diameter / 2;
+    const height = Math.min(MAX_TERRAIN_ELEVATION, 3 + Math.floor(Math.random() * 6)); // 3-8 height
+
+    const centerX = Math.max(Math.floor(radius), Math.min(size - Math.ceil(radius) - 1, Math.floor(Math.random() * size)));
+    const centerY = Math.max(Math.floor(radius), Math.min(size - Math.ceil(radius) - 1, Math.floor(Math.random() * size)));
+
+    for (let y = Math.max(0, Math.floor(centerY - radius)); y < Math.min(size, Math.ceil(centerY + radius)); y++) {
+      for (let x = Math.max(0, Math.floor(centerX - radius)); x < Math.min(size, Math.ceil(centerX + radius)); x++) {
+        const dx = x - centerX;
+        const dy = y - centerY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist <= radius) {
+          const normalized = 1 - dist / radius;
+          const taperedHeight = height * Math.pow(normalized, 0.8);
+          grid[y][x].elevation = Math.min(
+            MAX_TERRAIN_ELEVATION,
+            Math.max(grid[y][x].elevation, taperedHeight)
+          );
+        }
+      }
+    }
+  }
+}
+
 function generateTerrain(size: number): { grid: Tile[][]; waterBodies: WaterBody[] } {
   const grid: Tile[][] = [];
   const seed = Math.random() * 1000;
@@ -412,17 +445,20 @@ function generateTerrain(size: number): { grid: Tile[][]; waterBodies: WaterBody
     }
     grid.push(row);
   }
-  
-  // Second pass: add lakes (small contiguous water regions)
+
+  // Second pass: add rolling hills before water placement
+  generateHills(grid, size);
+
+  // Third pass: add lakes (small contiguous water regions)
   const lakeBodies = generateLakes(grid, size, seed);
-  
-  // Third pass: add oceans on edges (sometimes)
+
+  // Fourth pass: add oceans on edges (sometimes)
   const oceanBodies = generateOceans(grid, size, seed);
-  
+
   // Combine all water bodies
   const waterBodies = [...lakeBodies, ...oceanBodies];
-  
-  // Fourth pass: add scattered trees (avoiding water)
+
+  // Fifth pass: add scattered trees (avoiding water)
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       if (grid[y][x].building.type === 'water') continue; // Don't place trees on water
@@ -537,10 +573,11 @@ export function getWaterAdjacency(
   return { hasWater, shouldFlip };
 }
 
-function createTile(x: number, y: number, buildingType: BuildingType = 'grass'): Tile {
+function createTile(x: number, y: number, buildingType: BuildingType = 'grass', elevation: number = 0): Tile {
   return {
     x,
     y,
+    elevation,
     zone: 'none',
     building: createBuilding(buildingType),
     landValue: 50,
@@ -635,7 +672,7 @@ function createAchievements(): Achievement[] {
   ];
 }
 
-export function createInitialGameState(size: number = 60, cityName: string = 'New City'): GameState {
+export function createInitialGameState(size: number = Math.round(60 * 1.1), cityName: string = 'New City'): GameState {
   const { grid, waterBodies } = generateTerrain(size);
   const adjacentCities = generateAdjacentCities();
 
@@ -1924,6 +1961,7 @@ function applyBuildingFootprint(
         cell.building = createBuilding('empty');
         cell.building.level = 0;
       }
+      cell.elevation = 0; // Flatten building footprint for construction
       cell.zone = zone;
       cell.pollution = dx === 0 && dy === 0 ? stats.pollution : 0;
     }
@@ -2034,6 +2072,9 @@ export function placeBuilding(
         return state; // Can't place on existing building or part of multi-tile building
       }
       newGrid[y][x].building = createBuilding(buildingType);
+      if (buildingType !== 'road') {
+        newGrid[y][x].elevation = 0; // Flatten tile for constructed buildings
+      }
       newGrid[y][x].zone = 'none';
       // Set flip for waterfront buildings to face the water
       if (shouldFlip) {

@@ -131,6 +131,8 @@ export type Tool =
   | 'mountain_lodge'
   | 'mountain_trailhead';
 
+export const MAX_TERRAIN_ELEVATION = 8;
+
 export interface ToolInfo {
   name: string;
   cost: number;
@@ -213,6 +215,7 @@ export interface Building {
 export interface Tile {
   x: number;
   y: number;
+  elevation: number;
   zone: ZoneType;
   building: Building;
   landValue: number;

@@ -174,9 +174,16 @@ export function getDirectionToTile(fromX: number, fromY: number, toX: number, to
 }
 
 // Convert grid coordinates to screen coordinates (isometric)
-export function gridToScreen(x: number, y: number, offsetX: number, offsetY: number): { screenX: number; screenY: number } {
+export function gridToScreen(
+  x: number,
+  y: number,
+  offsetX: number,
+  offsetY: number,
+  elevation: number = 0
+): { screenX: number; screenY: number } {
   const screenX = (x - y) * (TILE_WIDTH / 2) + offsetX;
-  const screenY = (x + y) * (TILE_HEIGHT / 2) + offsetY;
+  const elevationOffset = elevation * TILE_HEIGHT * 0.6;
+  const screenY = (x + y) * (TILE_HEIGHT / 2) + offsetY - elevationOffset;
   return { screenX, screenY };
 }
 
