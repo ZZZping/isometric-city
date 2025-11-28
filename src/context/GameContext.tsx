@@ -169,6 +169,10 @@ function loadGameState(): GameState | null {
         if (parsed.effectiveTaxRate === undefined) {
           parsed.effectiveTaxRate = parsed.taxRate ?? 9; // Start at current tax rate
         }
+        // Ensure tilesPlaced exists for new onboarding feature
+        if (parsed.tilesPlaced === undefined) {
+          parsed.tilesPlaced = 100; // Old saves are assumed to have placed many tiles (disable onboarding)
+        }
         // Migrate constructionProgress for existing buildings (they're already built)
         if (parsed.grid) {
           for (let y = 0; y < parsed.grid.length; y++) {
@@ -470,6 +474,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         return {
           ...nextState,
           stats: { ...nextState.stats, money: nextState.stats.money - cost },
+          tilesPlaced: nextState.tilesPlaced + 1,
         };
       }
 
@@ -493,6 +498,12 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           stats: { ...nextState.stats, money: nextState.stats.money - cost },
         };
       }
+
+      // Increment tile placement counter
+      nextState = {
+        ...nextState,
+        tilesPlaced: nextState.tilesPlaced + 1,
+      };
 
       return nextState;
     });
@@ -640,6 +651,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         // Ensure effectiveTaxRate exists for lagging tax effect
         if (parsed.effectiveTaxRate === undefined) {
           parsed.effectiveTaxRate = parsed.taxRate ?? 9;
+        }
+        // Ensure tilesPlaced exists for new onboarding feature
+        if (parsed.tilesPlaced === undefined) {
+          parsed.tilesPlaced = 100; // Loaded saves are assumed to have placed many tiles (disable onboarding)
         }
         // Migrate constructionProgress for existing buildings (they're already built)
         if (parsed.grid) {

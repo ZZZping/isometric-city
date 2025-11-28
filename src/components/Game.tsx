@@ -6,6 +6,7 @@ import { Tool } from '@/types/game';
 import { useMobile } from '@/hooks/useMobile';
 import { MobileToolbar } from '@/components/mobile/MobileToolbar';
 import { MobileTopBar } from '@/components/mobile/MobileTopBar';
+import { toast } from 'sonner';
 
 // Import shadcn components
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -29,7 +30,7 @@ import { TopBar, StatsPanel } from '@/components/game/TopBar';
 import { CanvasIsometricGrid } from '@/components/game/CanvasIsometricGrid';
 
 export default function Game() {
-  const { state, setTool, setActivePanel, addMoney, addNotification, setSpeed } = useGame();
+  const { state, setTool, setActivePanel, addMoney, addNotification, setSpeed, loadState } = useGame();
   const [overlayMode, setOverlayMode] = useState<OverlayMode>('none');
   const [selectedTile, setSelectedTile] = useState<{ x: number; y: number } | null>(null);
   const [navigationTarget, setNavigationTarget] = useState<{ x: number; y: number } | null>(null);
@@ -37,6 +38,7 @@ export default function Game() {
   const isInitialMount = useRef(true);
   const { isMobileDevice, isSmallScreen } = useMobile();
   const isMobile = isMobileDevice || isSmallScreen;
+  const hasShownOnboardingToast = useRef(false);
   
   // Cheat code system
   const {
@@ -181,6 +183,45 @@ export default function Game() {
         break;
     }
   }, [triggeredCheat, addMoney, addNotification, clearTriggeredCheat]);
+
+  // Onboarding: Show toast after 30s if user hasn't placed 10+ tiles
+  useEffect(() => {
+    // Don't show if already shown, or if user has already placed enough tiles
+    if (hasShownOnboardingToast.current || state.tilesPlaced >= 10) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      if (state.tilesPlaced < 10 && !hasShownOnboardingToast.current) {
+        hasShownOnboardingToast.current = true;
+        
+        toast('Try random city?', {
+          description: 'Get started with a pre-built city',
+          action: {
+            label: 'Load',
+            onClick: async () => {
+              try {
+                const response = await fetch('/resources/example_state_5.json');
+                const exampleState = await response.text();
+                const success = loadState(exampleState);
+                if (success) {
+                  toast.success('City loaded!');
+                } else {
+                  toast.error('Failed to load city');
+                }
+              } catch (error) {
+                console.error('Error loading example state:', error);
+                toast.error('Failed to load city');
+              }
+            },
+          },
+          duration: 10000,
+        });
+      }
+    }, 30000); // 30 seconds
+
+    return () => clearTimeout(timer);
+  }, [state.tilesPlaced, loadState]);
 
   // Mobile layout
   if (isMobile) {

@@ -329,6 +329,7 @@ export interface GameState {
   disastersEnabled: boolean;
   adjacentCities: AdjacentCity[];
   waterBodies: WaterBody[];
+  tilesPlaced: number; // Track number of tiles placed by user
 }
 
 // Building evolution paths based on zone and level

@@ -803,6 +803,7 @@ export function createInitialGameState(size: number = 60, cityName: string = 'Ne
     disastersEnabled: true,
     adjacentCities,
     waterBodies,
+    tilesPlaced: 0,
   };
 }
 

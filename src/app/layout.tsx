@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Playfair_Display, DM_Sans } from 'next/font/google';
 import './globals.css';
+import { Toaster } from 'sonner';
 
 const playfair = Playfair_Display({
   subsets: ['latin'],
@@ -60,7 +61,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="mobile-web-app-capable" content="yes" />
         <link rel="apple-touch-icon" href="/assets/buildings/residential.png" />
       </head>
-      <body className="bg-background text-foreground antialiased font-sans overflow-hidden">{children}</body>
+      <body className="bg-background text-foreground antialiased font-sans overflow-hidden">
+        {children}
+        <Toaster />
+      </body>
     </html>
   );
 }
