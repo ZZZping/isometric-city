@@ -18,8 +18,15 @@ import {
   RESIDENTIAL_BUILDINGS,
   COMMERCIAL_BUILDINGS,
   INDUSTRIAL_BUILDINGS,
+  WeatherState,
+  Season,
+  WeatherCondition,
+  WeatherEffects,
 } from '@/types/game';
 import { generateCityName, generateWaterName } from './names';
+
+const TICKS_PER_DAY = 15; // calendar advances twice as fast as before (was 30 ticks)
+const VISUAL_CYCLE_TICKS = 450; // retains atmospheric day/night cycle pacing
 
 // Check if a factory_small at this position would render as a farm
 // This matches the deterministic logic in Game.tsx for farm variant selection
@@ -655,6 +662,7 @@ export function createInitialGameState(size: number = 60, cityName: string = 'Ne
     month: 1,
     day: 1,
     hour: 12, // Start at noon
+    dayCycleTick: 0,
     tick: 0,
     speed: 1,
     selectedTool: 'select',
@@ -670,7 +678,264 @@ export function createInitialGameState(size: number = 60, cityName: string = 'Ne
     disastersEnabled: true,
     adjacentCities,
     waterBodies,
+    weather: createInitialWeatherState(1),
   };
+}
+
+const SEASON_CONFIG: Record<Season, {
+  daylightShift: number;
+  temperatureRange: [number, number];
+  humidityRange: [number, number];
+  windRange: [number, number];
+  conditions: Array<{ condition: WeatherCondition; weight: number }>;
+}> = {
+  winter: {
+    daylightShift: -1.5,
+    temperatureRange: [-12, 4],
+    humidityRange: [45, 85],
+    windRange: [10, 32],
+    conditions: [
+      { condition: 'snow', weight: 4 },
+      { condition: 'cloudy', weight: 2.4 },
+      { condition: 'clear', weight: 1.6 },
+      { condition: 'storm', weight: 1.1 },
+      { condition: 'rain', weight: 0.9 },
+    ],
+  },
+  spring: {
+    daylightShift: -0.2,
+    temperatureRange: [4, 18],
+    humidityRange: [55, 90],
+    windRange: [8, 22],
+    conditions: [
+      { condition: 'rain', weight: 3.5 },
+      { condition: 'cloudy', weight: 2.5 },
+      { condition: 'clear', weight: 1.5 },
+      { condition: 'storm', weight: 1.1 },
+      { condition: 'snow', weight: 0.5 },
+    ],
+  },
+  summer: {
+    daylightShift: 1.4,
+    temperatureRange: [18, 33],
+    humidityRange: [35, 70],
+    windRange: [4, 16],
+    conditions: [
+      { condition: 'clear', weight: 3.0 },
+      { condition: 'heatwave', weight: 2.1 },
+      { condition: 'rain', weight: 1.8 },
+      { condition: 'storm', weight: 1.2 },
+      { condition: 'cloudy', weight: 1.0 },
+    ],
+  },
+  autumn: {
+    daylightShift: -0.6,
+    temperatureRange: [5, 18],
+    humidityRange: [55, 85],
+    windRange: [12, 26],
+    conditions: [
+      { condition: 'rain', weight: 3.0 },
+      { condition: 'cloudy', weight: 2.2 },
+      { condition: 'storm', weight: 1.4 },
+      { condition: 'clear', weight: 1.3 },
+      { condition: 'snow', weight: 0.9 },
+    ],
+  },
+};
+
+const WEATHER_DURATION: Record<WeatherCondition, [number, number]> = {
+  clear: [2, 4],
+  cloudy: [1, 3],
+  rain: [1, 3],
+  snow: [2, 4],
+  storm: [1, 2],
+  heatwave: [2, 3],
+};
+
+const clampValue = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+
+const randomBetween = (min: number, max: number) => min + Math.random() * (max - min);
+
+function pickConditionForSeason(season: Season, previous?: WeatherCondition): WeatherCondition {
+  const entries = SEASON_CONFIG[season].conditions;
+  const totalWeight = entries.reduce((sum, entry) => {
+    const adjustedWeight = previous && entry.condition === previous ? entry.weight * 0.6 : entry.weight;
+    return sum + adjustedWeight;
+  }, 0);
+
+  let roll = Math.random() * totalWeight;
+  for (const entry of entries) {
+    const weight = previous && entry.condition === previous ? entry.weight * 0.6 : entry.weight;
+    if (roll < weight) {
+      return entry.condition;
+    }
+    roll -= weight;
+  }
+  return entries[0].condition;
+}
+
+function describeWeather(condition: WeatherCondition, temperatureC: number, season: Season): string {
+  const temp = Math.round(temperatureC);
+  switch (condition) {
+    case 'snow':
+      return temp <= -5 ? 'Heavy snowfall frosting the streets' : 'Light snow dusting the avenues';
+    case 'rain':
+      return temp < 10 ? 'Cold rain and soaked sidewalks' : 'Steady rain and glistening pavement';
+    case 'storm':
+      return 'Thunderstorms rolling across the skyline';
+    case 'cloudy':
+      return 'Thick clouds drifting over the city';
+    case 'heatwave':
+      return 'Oppressive heat shimmering over asphalt';
+    case 'clear':
+    default:
+      return season === 'winter' ? 'Crisp clear winter day' : 'Bright, calm skies';
+  }
+}
+
+function createWeatherVisuals(condition: WeatherCondition, season: Season) {
+  const visuals: WeatherState['visuals'] = {
+    precipitation: 'none',
+    precipitationIntensity: 0,
+    cloudCoverage: 0.25,
+    lightningChance: 0,
+    roadCondition: 'dry',
+    heatHaze: false,
+  };
+
+  switch (condition) {
+    case 'rain':
+      visuals.precipitation = 'rain';
+      visuals.precipitationIntensity = 0.4 + Math.random() * 0.4;
+      visuals.cloudCoverage = 0.85;
+      visuals.lightningChance = season === 'summer' ? 0.2 : 0.1;
+      visuals.roadCondition = 'wet';
+      break;
+    case 'snow':
+      visuals.precipitation = 'snow';
+      visuals.precipitationIntensity = 0.35 + Math.random() * 0.4;
+      visuals.cloudCoverage = 0.95;
+      visuals.roadCondition = 'snow';
+      break;
+    case 'storm':
+      visuals.precipitation = 'rain';
+      visuals.precipitationIntensity = 0.8;
+      visuals.cloudCoverage = 1;
+      visuals.lightningChance = 0.8;
+      visuals.roadCondition = 'wet';
+      break;
+    case 'heatwave':
+      visuals.precipitation = 'none';
+      visuals.precipitationIntensity = 0;
+      visuals.cloudCoverage = 0.15;
+      visuals.roadCondition = 'dry';
+      visuals.heatHaze = true;
+      break;
+    case 'cloudy':
+      visuals.cloudCoverage = 0.6;
+      break;
+    case 'clear':
+    default:
+      visuals.cloudCoverage = 0.2;
+  }
+
+  return visuals;
+}
+
+function createWeatherEffects(condition: WeatherCondition, season: Season): WeatherEffects {
+  const base: WeatherEffects = {
+    incomeMultiplier: 0,
+    expenseMultiplier: 0,
+    residentialDemandDelta: 0,
+    commercialDemandDelta: 0,
+    industrialDemandDelta: 0,
+    happinessDelta: 0,
+    environmentDelta: 0,
+  };
+
+  switch (condition) {
+    case 'rain':
+      base.environmentDelta = 3;
+      base.commercialDemandDelta = -2;
+      base.happinessDelta = 1;
+      break;
+    case 'snow':
+      base.expenseMultiplier = 0.04;
+      base.commercialDemandDelta = -4;
+      base.industrialDemandDelta = -2;
+      base.happinessDelta = -3;
+      base.environmentDelta = 2;
+      break;
+    case 'storm':
+      base.expenseMultiplier = 0.05;
+      base.residentialDemandDelta = -3;
+      base.commercialDemandDelta = -3;
+      base.industrialDemandDelta = -4;
+      base.happinessDelta = -4;
+      break;
+    case 'heatwave':
+      base.incomeMultiplier = -0.03;
+      base.expenseMultiplier = 0.02;
+      base.environmentDelta = -5;
+      base.happinessDelta = -3;
+      base.residentialDemandDelta = -2;
+      break;
+    case 'cloudy':
+      base.environmentDelta = 1;
+      break;
+    case 'clear':
+    default:
+      base.happinessDelta = 2;
+  }
+
+  if (season === 'spring' && condition === 'clear') {
+    base.environmentDelta += 2;
+  }
+  if (season === 'autumn' && condition === 'storm') {
+    base.environmentDelta += 1;
+  }
+
+  return base;
+}
+
+export function getSeasonForMonth(month: number): Season {
+  if (month === 12 || month <= 2) return 'winter';
+  if (month >= 3 && month <= 5) return 'spring';
+  if (month >= 6 && month <= 8) return 'summer';
+  return 'autumn';
+}
+
+function rollWeatherState(season: Season, previous?: WeatherState): WeatherState {
+  const config = SEASON_CONFIG[season];
+  const condition = pickConditionForSeason(season, previous?.condition);
+  const temperatureC = randomBetween(config.temperatureRange[0], config.temperatureRange[1]);
+  const humidity = Math.round(randomBetween(config.humidityRange[0], config.humidityRange[1]));
+  const windSpeed = Math.round(randomBetween(config.windRange[0], config.windRange[1]));
+  const durationRange = WEATHER_DURATION[condition];
+  const daysRemaining = Math.max(1, Math.round(randomBetween(durationRange[0], durationRange[1])));
+  const visuals = createWeatherVisuals(condition, season);
+  const effects = createWeatherEffects(condition, season);
+  // Daylight shift per season plus small modifier for condition extremes
+  const conditionShift = condition === 'heatwave' ? 0.3 : condition === 'snow' ? -0.3 : 0;
+  const dayLengthShiftHours = config.daylightShift + conditionShift;
+
+  return {
+    season,
+    condition,
+    temperatureC,
+    humidity,
+    windSpeed,
+    dayLengthShiftHours,
+    description: describeWeather(condition, temperatureC, season),
+    daysRemaining,
+    visuals,
+    effects,
+  };
+}
+
+export function createInitialWeatherState(month: number): WeatherState {
+  const season = getSeasonForMonth(month);
+  return rollWeatherState(season);
 }
 
 // Service building configuration - defined once, reused across calls
@@ -1675,24 +1940,30 @@ export function simulateTick(state: GameState): GameState {
   const newStats = calculateStats(newGrid, size, newBudget, state.taxRate, newEffectiveTaxRate, services);
   newStats.money = state.stats.money;
 
-  // Update money on month change
+  // Apply current weather economic effects before advancing time
+  const activeWeather = state.weather ?? createInitialWeatherState(state.month);
+  const weatherEffects = activeWeather.effects;
+  if (weatherEffects.incomeMultiplier !== 0) {
+    newStats.income = Math.max(0, Math.round(newStats.income * (1 + weatherEffects.incomeMultiplier)));
+  }
+  if (weatherEffects.expenseMultiplier !== 0) {
+    newStats.expenses = Math.max(0, Math.round(newStats.expenses * (1 + weatherEffects.expenseMultiplier)));
+  }
+  newStats.demand.residential = clampValue(newStats.demand.residential + weatherEffects.residentialDemandDelta, -100, 100);
+  newStats.demand.commercial = clampValue(newStats.demand.commercial + weatherEffects.commercialDemandDelta, -100, 100);
+  newStats.demand.industrial = clampValue(newStats.demand.industrial + weatherEffects.industrialDemandDelta, -100, 100);
+  newStats.happiness = clampValue(newStats.happiness + weatherEffects.happinessDelta, 0, 100);
+  newStats.environment = clampValue(newStats.environment + weatherEffects.environmentDelta, 0, 100);
+
+  // Update money on calendar change
   let newYear = state.year;
   let newMonth = state.month;
   let newDay = state.day;
   let newTick = state.tick + 1;
-  
-  // Calculate visual hour for day/night cycle (much slower than game time)
-  // One full day/night cycle = 15 game days (450 ticks)
-  // This makes the cycle atmospheric rather than jarring
-  const totalTicks = ((state.year - 2024) * 12 * 30 * 30) + ((state.month - 1) * 30 * 30) + ((state.day - 1) * 30) + newTick;
-  const cycleLength = 450; // ticks per visual day (15 game days)
-  const newHour = Math.floor((totalTicks % cycleLength) / cycleLength * 24);
 
-  if (newTick >= 30) {
+  if (newTick >= TICKS_PER_DAY) {
     newTick = 0;
     newDay++;
-    // Weekly income/expense (deposit every 7 days at 1/4 monthly rate)
-    // Only deposit when day changes to a multiple of 7
     if (newDay % 7 === 0) {
       newStats.money += Math.floor((newStats.income - newStats.expenses) / 4);
     }
@@ -1706,6 +1977,25 @@ export function simulateTick(state: GameState): GameState {
   if (newMonth > 12) {
     newMonth = 1;
     newYear++;
+  }
+
+  const newDayCycleTick = (state.dayCycleTick + 1) % VISUAL_CYCLE_TICKS;
+  const newHour = Math.floor((newDayCycleTick / VISUAL_CYCLE_TICKS) * 24);
+
+  // Update weather when seasons or durations change
+  const upcomingSeason = getSeasonForMonth(newMonth);
+  const dayAdvanced = newDay !== state.day || newMonth !== state.month || newYear !== state.year;
+  let remainingDays = activeWeather.daysRemaining;
+  if (dayAdvanced) {
+    remainingDays -= 1;
+  }
+  let updatedWeather: WeatherState;
+  if (upcomingSeason !== activeWeather.season) {
+    updatedWeather = rollWeatherState(upcomingSeason);
+  } else if (remainingDays <= 0) {
+    updatedWeather = rollWeatherState(upcomingSeason, activeWeather);
+  } else {
+    updatedWeather = { ...activeWeather, daysRemaining: remainingDays };
   }
 
   // Generate advisor messages
@@ -1742,6 +2032,7 @@ export function simulateTick(state: GameState): GameState {
     month: newMonth,
     day: newDay,
     hour: newHour,
+    dayCycleTick: newDayCycleTick,
     tick: newTick,
     effectiveTaxRate: newEffectiveTaxRate,
     stats: newStats,
@@ -1750,6 +2041,7 @@ export function simulateTick(state: GameState): GameState {
     advisorMessages,
     notifications: newNotifications,
     history,
+    weather: updatedWeather,
   };
 }
 

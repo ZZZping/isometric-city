@@ -313,6 +313,7 @@ export interface GameState {
   month: number;
   day: number;
   hour: number; // 0-23 for day/night cycle
+  dayCycleTick: number; // visual cycle progression independent of calendar
   tick: number;
   speed: 0 | 1 | 2 | 3;
   selectedTool: Tool;
@@ -328,12 +329,49 @@ export interface GameState {
   disastersEnabled: boolean;
   adjacentCities: AdjacentCity[];
   waterBodies: WaterBody[];
+  weather: WeatherState;
 }
 
 // Building evolution paths based on zone and level
 export const RESIDENTIAL_BUILDINGS: BuildingType[] = ['house_small', 'house_medium', 'mansion', 'apartment_low', 'apartment_high'];
 export const COMMERCIAL_BUILDINGS: BuildingType[] = ['shop_small', 'shop_medium', 'office_low', 'office_high', 'mall'];
 export const INDUSTRIAL_BUILDINGS: BuildingType[] = ['factory_small', 'factory_medium', 'warehouse', 'factory_large', 'factory_large'];
+
+export type Season = 'winter' | 'spring' | 'summer' | 'autumn';
+
+export type WeatherCondition = 'clear' | 'cloudy' | 'rain' | 'snow' | 'storm' | 'heatwave';
+
+export interface WeatherEffects {
+  incomeMultiplier: number;
+  expenseMultiplier: number;
+  residentialDemandDelta: number;
+  commercialDemandDelta: number;
+  industrialDemandDelta: number;
+  happinessDelta: number;
+  environmentDelta: number;
+}
+
+export interface WeatherVisuals {
+  precipitation: 'none' | 'rain' | 'snow';
+  precipitationIntensity: number; // 0-1
+  cloudCoverage: number; // 0-1
+  lightningChance: number; // 0-1
+  roadCondition: 'dry' | 'wet' | 'snow';
+  heatHaze: boolean;
+}
+
+export interface WeatherState {
+  season: Season;
+  condition: WeatherCondition;
+  temperatureC: number;
+  humidity: number;
+  windSpeed: number;
+  dayLengthShiftHours: number;
+  description: string;
+  daysRemaining: number;
+  visuals: WeatherVisuals;
+  effects: WeatherEffects;
+}
 
 export const BUILDING_STATS: Record<BuildingType, { maxPop: number; maxJobs: number; pollution: number; landValue: number }> = {
   empty: { maxPop: 0, maxJobs: 0, pollution: 0, landValue: 0 },

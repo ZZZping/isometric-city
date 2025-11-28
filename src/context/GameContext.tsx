@@ -13,6 +13,7 @@ import {
 import {
   bulldozeTile,
   createInitialGameState,
+  createInitialWeatherState,
   placeBuilding,
   placeSubway,
   simulateTick,
@@ -158,6 +159,26 @@ function loadGameState(): GameState | null {
         // Ensure effectiveTaxRate exists for lagging tax effect
         if (parsed.effectiveTaxRate === undefined) {
           parsed.effectiveTaxRate = parsed.taxRate ?? 9; // Start at current tax rate
+        }
+        if (parsed.dayCycleTick === undefined) {
+          parsed.dayCycleTick = 0;
+        }
+        if (!parsed.weather) {
+          parsed.weather = createInitialWeatherState(parsed.month ?? 1);
+        } else {
+          const fallbackWeather = createInitialWeatherState(parsed.month ?? 1);
+          parsed.weather = {
+            ...fallbackWeather,
+            ...parsed.weather,
+            effects: { ...fallbackWeather.effects, ...(parsed.weather.effects ?? {}) },
+            visuals: { ...fallbackWeather.visuals, ...(parsed.weather.visuals ?? {}) },
+          };
+          if (parsed.weather.dayLengthShiftHours === undefined) {
+            parsed.weather.dayLengthShiftHours = fallbackWeather.dayLengthShiftHours;
+          }
+          if (parsed.weather.daysRemaining === undefined) {
+            parsed.weather.daysRemaining = fallbackWeather.daysRemaining;
+          }
         }
         // Migrate constructionProgress for existing buildings (they're already built)
         if (parsed.grid) {
@@ -563,6 +584,26 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         // Ensure effectiveTaxRate exists for lagging tax effect
         if (parsed.effectiveTaxRate === undefined) {
           parsed.effectiveTaxRate = parsed.taxRate ?? 9;
+        }
+        if (parsed.dayCycleTick === undefined) {
+          parsed.dayCycleTick = 0;
+        }
+        if (!parsed.weather) {
+          parsed.weather = createInitialWeatherState(parsed.month ?? 1);
+        } else {
+          const fallbackWeather = createInitialWeatherState(parsed.month ?? 1);
+          parsed.weather = {
+            ...fallbackWeather,
+            ...parsed.weather,
+            effects: { ...fallbackWeather.effects, ...(parsed.weather.effects ?? {}) },
+            visuals: { ...fallbackWeather.visuals, ...(parsed.weather.visuals ?? {}) },
+          };
+          if (parsed.weather.dayLengthShiftHours === undefined) {
+            parsed.weather.dayLengthShiftHours = fallbackWeather.dayLengthShiftHours;
+          }
+          if (parsed.weather.daysRemaining === undefined) {
+            parsed.weather.daysRemaining = fallbackWeather.daysRemaining;
+          }
         }
         // Migrate constructionProgress for existing buildings (they're already built)
         if (parsed.grid) {

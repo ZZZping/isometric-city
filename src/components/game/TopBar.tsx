@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { useGame } from '@/context/GameContext';
+import type { WeatherState } from '@/types/game';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -52,6 +53,86 @@ export const TimeOfDayIcon = ({ hour }: TimeOfDayIconProps) => {
       </svg>
     );
   }
+};
+
+interface WeatherGlyphProps {
+  condition: WeatherState['condition'];
+}
+
+const WeatherGlyph = ({ condition }: WeatherGlyphProps) => {
+  switch (condition) {
+    case 'rain':
+      return (
+        <svg className="w-4 h-4 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+          <path d="M7 15h10a4 4 0 0 0 0-8 5 5 0 0 0-9.8-1.4A3.5 3.5 0 0 0 7 15z" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M9 18l-1.5 3m4-3l-1.5 3m4-3l-1.5 3" strokeLinecap="round" />
+        </svg>
+      );
+    case 'snow':
+      return (
+        <svg className="w-4 h-4 text-slate-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4">
+          <path d="M12 4v16M7 7l10 10M17 7l-10 10M4 12h16" strokeLinecap="round" />
+        </svg>
+      );
+    case 'storm':
+      return (
+        <svg className="w-4 h-4 text-yellow-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+          <path d="M7 14h10a4 4 0 0 0 0-8 5 5 0 0 0-9.8-1.4A3.5 3.5 0 0 0 7 14z" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M11 14l-1 5 4-3h-3l1-4" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
+    case 'heatwave':
+      return (
+        <svg className="w-4 h-4 text-orange-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 3v2M12 19v2M4.2 7.8l1.4 1.4M18.4 16.2l1.4 1.4M3 12h2M19 12h2M4.2 16.2l1.4-1.4M18.4 7.8l1.4-1.4" />
+        </svg>
+      );
+    case 'cloudy':
+      return (
+        <svg className="w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+          <path d="M7 16h10a4 4 0 0 0 0-8 5 5 0 0 0-9.8-1.4A3.5 3.5 0 0 0 7 16z" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
+    case 'clear':
+    default:
+      return (
+        <svg className="w-4 h-4 text-amber-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 4v2M12 18v2M4 12h2M18 12h2M5.6 5.6l1.4 1.4M16.9 16.9l1.4 1.4M5.6 18.4l1.4-1.4M16.9 7.1l1.4-1.4" />
+        </svg>
+      );
+  }
+};
+
+const WeatherBadge = ({ weather }: { weather: WeatherState }) => {
+  const temperature = `${Math.round(weather.temperatureC)}°C`;
+  const precipLabel =
+    weather.visuals.precipitation === 'none'
+      ? 'Dry streets'
+      : `${weather.visuals.precipitation === 'snow' ? 'Snow' : 'Rain'} • ${Math.round(weather.visuals.precipitationIntensity * 100)}%`;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className="flex items-center gap-1 text-xs text-muted-foreground font-mono tabular-nums">
+          <WeatherGlyph condition={weather.condition} />
+          <span>{temperature}</span>
+          <span className="hidden sm:inline uppercase tracking-tight">{weather.condition}</span>
+        </div>
+      </TooltipTrigger>
+      <TooltipContent>
+        <div className="text-xs space-y-1">
+          <div className="font-medium">
+            {weather.season.charAt(0).toUpperCase() + weather.season.slice(1)} • {weather.condition}
+          </div>
+          <div>{weather.description}</div>
+          <div className="text-muted-foreground">
+            {precipLabel} • Winds {Math.round(weather.windSpeed)} km/h
+          </div>
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  );
 };
 
 // ============================================================================
@@ -154,7 +235,7 @@ export const StatsPanel = React.memo(function StatsPanel() {
 
 export const TopBar = React.memo(function TopBar() {
   const { state, setSpeed, setTaxRate, isSaving } = useGame();
-  const { stats, year, month, day, hour, speed, taxRate, cityName } = state;
+  const { stats, year, month, day, hour, speed, taxRate, cityName, weather } = state;
   
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const formattedDate = `${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}-${year}`;
@@ -179,6 +260,7 @@ export const TopBar = React.memo(function TopBar() {
               </TooltipContent>
             </Tooltip>
             <TimeOfDayIcon hour={hour} />
+            {weather && <WeatherBadge weather={weather} />}
           </div>
         </div>
         

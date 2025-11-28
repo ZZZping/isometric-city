@@ -119,6 +119,50 @@ import {
 import { drawAirplanes as drawAirplanesUtil, drawHelicopters as drawHelicoptersUtil } from '@/components/game/drawAircraft';
 import { drawPedestrians as drawPedestriansUtil } from '@/components/game/drawPedestrians';
 
+type CloudPuff = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  speed: number;
+  opacity: number;
+};
+
+type RainDrop = {
+  x: number;
+  y: number;
+  speed: number;
+  sway: number;
+  length: number;
+  opacity: number;
+};
+
+type SnowFlake = {
+  x: number;
+  y: number;
+  speed: number;
+  drift: number;
+  offset: number;
+  size: number;
+  opacity: number;
+};
+
+type LightningBolt = {
+  segments: Array<{ x: number; y: number }>;
+  age: number;
+  maxAge: number;
+};
+
+type WeatherSystemState = {
+  clouds: CloudPuff[];
+  rain: RainDrop[];
+  snow: SnowFlake[];
+  lightning: LightningBolt[];
+  rainAccumulator: number;
+  snowAccumulator: number;
+  flashOpacity: number;
+};
+
 // Props interface for CanvasIsometricGrid
 export interface CanvasIsometricGridProps {
   overlayMode: OverlayMode;
@@ -133,7 +177,7 @@ export interface CanvasIsometricGridProps {
 // Canvas-based Isometric Grid - HIGH PERFORMANCE
 export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMobile = false, navigationTarget, onNavigationComplete, onViewportChange }: CanvasIsometricGridProps) {
   const { state, placeAtTile, connectToCity, currentSpritePack } = useGame();
-  const { grid, gridSize, selectedTool, speed, adjacentCities, waterBodies, hour } = state;
+  const { grid, gridSize, selectedTool, speed, adjacentCities, waterBodies, hour, weather } = state;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const carsCanvasRef = useRef<HTMLCanvasElement>(null);
   const lightingCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -203,6 +247,16 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
   // Factory smog system refs
   const factorySmogRef = useRef<FactorySmog[]>([]);
   const smogLastGridVersionRef = useRef(-1); // Track when to rebuild factory list
+  const weatherRef = useRef(weather);
+  const weatherSystemsRef = useRef<WeatherSystemState>({
+    clouds: [],
+    rain: [],
+    snow: [],
+    lightning: [],
+    rainAccumulator: 0,
+    snowAccumulator: 0,
+    flashOpacity: 0,
+  });
 
   // Performance: Cache expensive grid calculations
   const cachedRoadTileCountRef = useRef<{ count: number; gridVersion: number }>({ count: 0, gridVersion: -1 });
@@ -258,6 +312,10 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
   useEffect(() => {
     worldStateRef.current.canvasSize = canvasSize;
   }, [canvasSize]);
+
+  useEffect(() => {
+    weatherRef.current = weather;
+  }, [weather]);
 
   // Notify parent of viewport changes for minimap
   useEffect(() => {
@@ -2768,6 +2826,201 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     ctx.restore();
   }, []);
 
+  const updateWeatherSystems = useCallback((delta: number) => {
+    const systems = weatherSystemsRef.current;
+    const currentWeather = weatherRef.current;
+    const { canvasSize: currentCanvasSize } = worldStateRef.current;
+    const dpr = window.devicePixelRatio || 1;
+    const width = currentCanvasSize.width / dpr;
+    const height = currentCanvasSize.height / dpr;
+
+    if (!currentWeather) {
+      systems.clouds = [];
+      systems.rain = [];
+      systems.snow = [];
+      systems.lightning = [];
+      systems.flashOpacity = 0;
+      systems.rainAccumulator = 0;
+      systems.snowAccumulator = 0;
+      return;
+    }
+
+    const { precipitation, precipitationIntensity, cloudCoverage, lightningChance } = currentWeather.visuals;
+
+    const targetClouds = Math.round(cloudCoverage * (isMobile ? 10 : 20));
+    while (systems.clouds.length < targetClouds) {
+      systems.clouds.push({
+        x: Math.random() * (width + 200) - 100,
+        y: Math.random() * height * 0.35 + 20,
+        width: (120 + Math.random() * 180) * (isMobile ? 0.7 : 1),
+        height: 26 + Math.random() * 20,
+        speed: 12 + Math.random() * 18,
+        opacity: 0.08 + cloudCoverage * 0.35,
+      });
+    }
+    systems.clouds = systems.clouds.filter(cloud => {
+      cloud.x += cloud.speed * delta * 0.25;
+      return cloud.x - cloud.width <= width + 160;
+    });
+    if (systems.clouds.length > targetClouds) {
+      systems.clouds.length = targetClouds;
+    }
+
+    systems.rain = systems.rain.filter(drop => {
+      drop.y += drop.speed * delta;
+      drop.x += drop.sway * delta;
+      return drop.y < height + 40;
+    });
+    if (precipitation === 'rain') {
+      systems.rainAccumulator += precipitationIntensity * (isMobile ? 280 : 520) * delta;
+      while (systems.rainAccumulator > 1) {
+        systems.rainAccumulator -= 1;
+        systems.rain.push({
+          x: Math.random() * (width + 200) - 100,
+          y: -20 + Math.random() * 10,
+          speed: 520 + Math.random() * 240,
+          sway: -60 + Math.random() * 60,
+          length: 16 + Math.random() * 6,
+          opacity: 0.25 + precipitationIntensity * 0.4,
+        });
+      }
+    } else {
+      systems.rainAccumulator = 0;
+      if (precipitation !== 'snow') {
+        systems.rain.length = 0;
+      }
+    }
+
+    systems.snow = systems.snow.filter(flake => {
+      flake.y += flake.speed * delta;
+      flake.offset += flake.drift * delta;
+      flake.x += Math.sin(flake.offset) * 12 * delta;
+      return flake.y < height + 30;
+    });
+    if (precipitation === 'snow') {
+      systems.snowAccumulator += precipitationIntensity * (isMobile ? 120 : 240) * delta;
+      while (systems.snowAccumulator > 1) {
+        systems.snowAccumulator -= 1;
+        systems.snow.push({
+          x: Math.random() * (width + 140) - 70,
+          y: -15,
+          speed: 45 + Math.random() * 35,
+          drift: 1 + Math.random() * 1.2,
+          offset: Math.random() * Math.PI * 2,
+          size: 1.5 + Math.random() * 2.5,
+          opacity: 0.4 + precipitationIntensity * 0.4,
+        });
+      }
+    } else {
+      systems.snowAccumulator = 0;
+      if (precipitation !== 'snow') {
+        systems.snow.length = precipitation === 'rain' ? Math.min(systems.snow.length, 12) : 0;
+      }
+    }
+
+    systems.lightning = systems.lightning.filter(bolt => {
+      bolt.age += delta;
+      return bolt.age < bolt.maxAge;
+    });
+    if (lightningChance > 0 && Math.random() < lightningChance * delta * 0.5) {
+      const segments: Array<{ x: number; y: number }> = [];
+      let currentX = Math.random() * width;
+      let currentY = -40;
+      while (currentY < height * 0.6) {
+        segments.push({ x: currentX, y: currentY });
+        currentX += (Math.random() - 0.5) * 80;
+        currentY += 55 + Math.random() * 70;
+      }
+      segments.push({ x: currentX, y: currentY });
+      systems.lightning.push({ segments, age: 0, maxAge: 0.25 });
+      systems.flashOpacity = Math.min(1, systems.flashOpacity + 0.5);
+    }
+    systems.flashOpacity = Math.max(0, systems.flashOpacity - delta * 2.2);
+  }, [isMobile]);
+
+  const drawWeatherSystems = useCallback((ctx: CanvasRenderingContext2D) => {
+    const currentWeather = weatherRef.current;
+    if (!currentWeather) return;
+    const systems = weatherSystemsRef.current;
+    const canvas = ctx.canvas;
+    const dpr = window.devicePixelRatio || 1;
+    const width = canvas.width / dpr;
+    const height = canvas.height / dpr;
+
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.scale(dpr, dpr);
+
+    systems.clouds.forEach(cloud => {
+      const gradient = ctx.createRadialGradient(
+        cloud.x,
+        cloud.y,
+        cloud.height * 0.2,
+        cloud.x,
+        cloud.y,
+        cloud.width * 0.7,
+      );
+      gradient.addColorStop(0, `rgba(255,255,255,${cloud.opacity})`);
+      gradient.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.ellipse(cloud.x, cloud.y, cloud.width, cloud.height, 0, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    if (systems.rain.length) {
+      ctx.strokeStyle = 'rgba(173, 216, 230, 0.65)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      systems.rain.forEach(drop => {
+        ctx.moveTo(drop.x, drop.y);
+        ctx.lineTo(drop.x + drop.sway * 0.02, drop.y + drop.length);
+      });
+      ctx.stroke();
+    }
+
+    if (systems.snow.length) {
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      systems.snow.forEach(flake => {
+        ctx.beginPath();
+        ctx.arc(flake.x, flake.y, flake.size, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+
+    if (systems.lightning.length) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      systems.lightning.forEach(bolt => {
+        ctx.beginPath();
+        bolt.segments.forEach((seg, idx) => {
+          if (idx === 0) {
+            ctx.moveTo(seg.x, seg.y);
+          } else {
+            ctx.lineTo(seg.x, seg.y);
+          }
+        });
+        ctx.stroke();
+      });
+    }
+
+    if (systems.flashOpacity > 0.01) {
+      ctx.fillStyle = `rgba(255,255,255,${systems.flashOpacity * 0.25})`;
+      ctx.fillRect(0, 0, width, height);
+    }
+
+    if (currentWeather.visuals.heatHaze) {
+      const gradient = ctx.createLinearGradient(0, height * 0.65, 0, height);
+      gradient.addColorStop(0, 'rgba(255, 200, 150, 0)');
+      gradient.addColorStop(1, 'rgba(255, 150, 80, 0.18)');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, height * 0.65, width, height * 0.35);
+    }
+
+    ctx.restore();
+  }, []);
+
   // Draw emergency vehicles (fire trucks and police cars)
   const drawEmergencyVehicles = useCallback((ctx: CanvasRenderingContext2D) => {
     const { offset: currentOffset, zoom: currentZoom, grid: currentGrid, gridSize: currentGridSize } = worldStateRef.current;
@@ -3401,6 +3654,11 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       const h = TILE_HEIGHT;
       const cx = x + w / 2;
       const cy = y + h / 2;
+      const activeWeather = weatherRef.current;
+      const roadCondition = activeWeather?.visuals.roadCondition ?? 'dry';
+      const precipitationIntensity = activeWeather?.visuals.precipitationIntensity ?? 0;
+      const isSnowCondition = roadCondition === 'snow';
+      const isWetCondition = roadCondition === 'wet';
       
       // Check adjacency (in isometric coordinates)
       const north = hasRoad(gridX - 1, gridY);  // top-left edge
@@ -3414,8 +3672,8 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       
       // Sidewalk configuration
       const sidewalkWidth = w * 0.08; // Width of the sidewalk strip
-      const sidewalkColor = '#9ca3af'; // Light gray for sidewalk
-      const curbColor = '#6b7280'; // Darker gray for curb edge
+      const sidewalkColor = isSnowCondition ? '#e3e7ef' : '#9ca3af'; // Light gray for sidewalk
+      const curbColor = isSnowCondition ? '#c9d1dd' : '#6b7280'; // Darker gray for curb edge
       
       // Edge stop distance - extend roads almost to the edge for better connection
       // Using 0.98 means roads extend to 98% of the way to the edge
@@ -3656,11 +3914,26 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         ctx.closePath();
         ctx.fill();
       }
+
+      if (isSnowCondition) {
+        const drawPile = (px: number, py: number, size: number) => {
+          ctx.fillStyle = 'rgba(255,255,255,0.92)';
+          ctx.beginPath();
+          ctx.ellipse(px, py, size, size * 0.6, 0, 0, Math.PI * 2);
+          ctx.fill();
+        };
+        drawPile(topCorner.x - 6, topCorner.y + 4, 4);
+        drawPile(rightCorner.x - 4, rightCorner.y - 6, 5);
+        drawPile(bottomCorner.x + 6, bottomCorner.y - 2, 4.5);
+        drawPile(leftCorner.x + 4, leftCorner.y + 6, 5);
+      }
       
       // ============================================
       // DRAW ROAD SEGMENTS
       // ============================================
-      ctx.fillStyle = '#4a4a4a';
+      const baseRoadColor = isSnowCondition ? '#dfe6f3' : isWetCondition ? '#3a3d42' : '#4a4a4a';
+      const laneMarkColor = isSnowCondition ? '#cbd5f5' : '#fbbf24';
+      ctx.fillStyle = baseRoadColor;
       
       // North segment (to top-left) - aligned with gridline
       if (north) {
@@ -3731,9 +4004,26 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       ctx.lineTo(cx - centerSize, cy);
       ctx.closePath();
       ctx.fill();
+
+      if (isWetCondition) {
+        ctx.save();
+        ctx.globalAlpha = 0.15 + precipitationIntensity * 0.25;
+        const sheenGradient = ctx.createLinearGradient(x, y, x + w, y + h);
+        sheenGradient.addColorStop(0, 'rgba(255,255,255,0.45)');
+        sheenGradient.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = sheenGradient;
+        ctx.beginPath();
+        ctx.moveTo(x + w / 2, y);
+        ctx.lineTo(x + w, y + h / 2);
+        ctx.lineTo(x + w / 2, y + h);
+        ctx.lineTo(x, y + h / 2);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
       
       // Draw road markings (yellow dashed lines) - aligned with gridlines
-      ctx.strokeStyle = '#fbbf24';
+      ctx.strokeStyle = laneMarkColor;
       ctx.lineWidth = 0.8;  // Thinner lines
       ctx.setLineDash([1.5, 2]);  // Smaller, more frequent dots
       ctx.lineCap = 'round';
@@ -4759,6 +5049,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         updateBoats(delta); // Update boats (marina/pier required)
         updateFireworks(delta, hour); // Update fireworks (nighttime only)
         updateSmog(delta); // Update factory smog particles
+        updateWeatherSystems(delta); // Update clouds/precipitation overlays
         navLightFlashTimerRef.current += delta * 3; // Update nav light flash timer
       }
       drawCars(ctx);
@@ -4770,11 +5061,12 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       drawHelicopters(ctx); // Draw helicopters (below planes, above ground)
       drawAirplanes(ctx); // Draw airplanes above everything
       drawFireworks(ctx); // Draw fireworks above everything (nighttime only)
+      drawWeatherSystems(ctx); // Screen-space clouds, rain, snow, lightning
     };
     
     animationFrameId = requestAnimationFrame(render);
     return () => cancelAnimationFrame(animationFrameId);
-  }, [canvasSize.width, canvasSize.height, updateCars, drawCars, spawnCrimeIncidents, updateCrimeIncidents, updateEmergencyVehicles, drawEmergencyVehicles, updatePedestrians, drawPedestrians, updateAirplanes, drawAirplanes, updateHelicopters, drawHelicopters, updateBoats, drawBoats, drawIncidentIndicators, updateFireworks, drawFireworks, updateSmog, drawSmog, hour, isMobile]);
+  }, [canvasSize.width, canvasSize.height, updateCars, drawCars, spawnCrimeIncidents, updateCrimeIncidents, updateEmergencyVehicles, drawEmergencyVehicles, updatePedestrians, drawPedestrians, updateAirplanes, drawAirplanes, updateHelicopters, drawHelicopters, updateBoats, drawBoats, drawIncidentIndicators, updateFireworks, drawFireworks, updateSmog, drawSmog, updateWeatherSystems, drawWeatherSystems, hour, isMobile]);
   
   // Day/Night cycle lighting rendering - optimized for performance
   useEffect(() => {
@@ -4785,12 +5077,20 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     
     const dpr = window.devicePixelRatio || 1;
     
-    // Calculate darkness based on hour (0-23)
-    // Dawn: 5-7, Day: 7-18, Dusk: 18-20, Night: 20-5
+    // Calculate darkness based on hour (0-23) with seasonal daylight shift
+    const daylightShift = weatherRef.current?.dayLengthShiftHours ?? 0;
+    const sunriseStart = 5 - daylightShift;
+    const sunriseEnd = 7 - daylightShift * 0.4;
+    const sunsetStart = 18 + daylightShift * 0.4;
+    const sunsetEnd = 20 + daylightShift;
     const getDarkness = (h: number): number => {
-      if (h >= 7 && h < 18) return 0; // Full daylight
-      if (h >= 5 && h < 7) return 1 - (h - 5) / 2; // Dawn transition
-      if (h >= 18 && h < 20) return (h - 18) / 2; // Dusk transition
+      if (h >= sunriseEnd && h < sunsetStart) return 0; // Full daylight
+      if (h >= sunriseStart && h < sunriseEnd) {
+        return 1 - (h - sunriseStart) / Math.max(0.1, sunriseEnd - sunriseStart);
+      }
+      if (h >= sunsetStart && h < sunsetEnd) {
+        return (h - sunsetStart) / Math.max(0.1, sunsetEnd - sunsetStart);
+      }
       return 1; // Night
     };
     
@@ -4826,19 +5126,33 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     }
     
     // Get ambient color based on time
+    const cloudFactor = weatherRef.current?.visuals.cloudCoverage ?? 0;
     const getAmbientColor = (h: number): { r: number; g: number; b: number } => {
-      if (h >= 7 && h < 18) return { r: 255, g: 255, b: 255 };
-      if (h >= 5 && h < 7) {
-        const t = (h - 5) / 2;
-        return { r: Math.round(60 + 40 * t), g: Math.round(40 + 30 * t), b: Math.round(70 + 20 * t) };
+      const baseDay = { r: 255, g: 255, b: 255 };
+      const dawnColor = { r: 90, g: 60, b: 90 };
+      const duskColor = { r: 110, g: 70, b: 90 };
+      const nightColor = { r: 20, g: 30, b: 60 };
+      const blend = (a: { r: number; g: number; b: number }, b: { r: number; g: number; b: number }, t: number) => ({
+        r: Math.round(a.r + (b.r - a.r) * t),
+        g: Math.round(a.g + (b.g - a.g) * t),
+        b: Math.round(a.b + (b.b - a.b) * t),
+      });
+      if (h >= sunriseEnd && h < sunsetStart) {
+        return blend(baseDay, { r: 220, g: 230, b: 245 }, cloudFactor * 0.6);
       }
-      if (h >= 18 && h < 20) {
-        const t = (h - 18) / 2;
-        return { r: Math.round(100 - 40 * t), g: Math.round(70 - 30 * t), b: Math.round(90 - 20 * t) };
+      if (h >= sunriseStart && h < sunriseEnd) {
+        const t = (h - sunriseStart) / Math.max(0.1, sunriseEnd - sunriseStart);
+        const color = blend(dawnColor, baseDay, t);
+        return blend(color, { r: 200, g: 210, b: 230 }, cloudFactor * 0.5);
       }
-      return { r: 20, g: 30, b: 60 };
+      if (h >= sunsetStart && h < sunsetEnd) {
+        const t = (h - sunsetStart) / Math.max(0.1, sunsetEnd - sunsetStart);
+        const color = blend(baseDay, duskColor, t);
+        return blend(color, { r: 150, g: 160, b: 190 }, cloudFactor * 0.5);
+      }
+      return blend(nightColor, { r: 30, g: 40, b: 80 }, cloudFactor * 0.4);
     };
-    
+
     const ambient = getAmbientColor(hour);
     
     // Apply darkness overlay
@@ -5037,7 +5351,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     ctx.restore();
     ctx.globalCompositeOperation = 'source-over';
     
-  }, [grid, gridSize, hour, offset, zoom, canvasSize.width, canvasSize.height, isMobile]);
+  }, [grid, gridSize, hour, offset, zoom, canvasSize.width, canvasSize.height, isMobile, weather]);
   
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button === 1 || (e.button === 0 && e.altKey)) {
