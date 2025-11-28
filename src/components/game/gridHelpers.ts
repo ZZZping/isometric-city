@@ -4,7 +4,7 @@
  */
 
 import { Tile, BuildingType } from '@/types/game';
-import { getBuildingSize } from './utils';
+import { getBuildingSize } from '@/lib/simulation';
 
 // ============================================================================
 // Building Origin Finder
