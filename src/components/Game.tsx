@@ -12,6 +12,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { useCheatCodes } from '@/hooks/useCheatCodes';
 import { VinnieDialog } from '@/components/VinnieDialog';
 import { CommandMenu } from '@/components/ui/CommandMenu';
+import { Toast } from '@/components/ui/Toast';
 
 // Import game components
 import { OverlayMode } from '@/components/game/types';
@@ -28,8 +29,11 @@ import { MiniMap } from '@/components/game/MiniMap';
 import { TopBar, StatsPanel } from '@/components/game/TopBar';
 import { CanvasIsometricGrid } from '@/components/game/CanvasIsometricGrid';
 
+// Import example state for random city feature
+import exampleState5 from '@/resources/example_state_5.json';
+
 export default function Game() {
-  const { state, setTool, setActivePanel, addMoney, addNotification, setSpeed } = useGame();
+  const { state, setTool, setActivePanel, addMoney, addNotification, setSpeed, loadState, hasExistingGame } = useGame();
   const [overlayMode, setOverlayMode] = useState<OverlayMode>('none');
   const [selectedTile, setSelectedTile] = useState<{ x: number; y: number } | null>(null);
   const [navigationTarget, setNavigationTarget] = useState<{ x: number; y: number } | null>(null);
@@ -37,6 +41,11 @@ export default function Game() {
   const isInitialMount = useRef(true);
   const { isMobileDevice, isSmallScreen } = useMobile();
   const isMobile = isMobileDevice || isSmallScreen;
+  
+  // Random city toast state
+  const [showRandomCityToast, setShowRandomCityToast] = useState(false);
+  const randomCityToastShownRef = useRef(false);
+  const gameStartTimeRef = useRef<number | null>(null);
   
   // Cheat code system
   const {
@@ -181,6 +190,67 @@ export default function Game() {
         break;
     }
   }, [triggeredCheat, addMoney, addNotification, clearTriggeredCheat]);
+  
+  // Random city toast - show after 30 seconds if user hasn't placed 10+ tiles
+  useEffect(() => {
+    // Don't show if already shown or dismissed
+    if (randomCityToastShownRef.current) return;
+    
+    // Don't show if user loaded an existing game (they're continuing a city)
+    if (hasExistingGame) {
+      randomCityToastShownRef.current = true;
+      return;
+    }
+    
+    // Start tracking time when the game component mounts
+    if (gameStartTimeRef.current === null) {
+      gameStartTimeRef.current = Date.now();
+    }
+    
+    // Count user-placed tiles (non-grass, non-water, non-empty tiles)
+    const countPlacedTiles = () => {
+      let count = 0;
+      for (const row of state.grid) {
+        for (const tile of row) {
+          const type = tile.building.type;
+          // Count anything that's not natural terrain
+          if (type !== 'grass' && type !== 'water' && type !== 'empty') {
+            count++;
+          }
+        }
+      }
+      return count;
+    };
+    
+    const checkAndShowToast = () => {
+      if (randomCityToastShownRef.current) return;
+      
+      const elapsedSeconds = (Date.now() - (gameStartTimeRef.current || Date.now())) / 1000;
+      
+      // Only check after 30 seconds
+      if (elapsedSeconds >= 30) {
+        const placedTiles = countPlacedTiles();
+        if (placedTiles < 10) {
+          setShowRandomCityToast(true);
+          randomCityToastShownRef.current = true;
+        } else {
+          // User has placed enough tiles, no need to show toast
+          randomCityToastShownRef.current = true;
+        }
+      }
+    };
+    
+    // Check every second
+    const interval = setInterval(checkAndShowToast, 1000);
+    
+    return () => clearInterval(interval);
+  }, [state.grid, hasExistingGame]);
+  
+  // Handle loading random city
+  const handleLoadRandomCity = useCallback(() => {
+    loadState(JSON.stringify(exampleState5));
+    setShowRandomCityToast(false);
+  }, [loadState]);
 
   // Mobile layout
   if (isMobile) {
@@ -218,6 +288,15 @@ export default function Game() {
           {state.activePanel === 'settings' && <SettingsPanel />}
           
           <VinnieDialog open={showVinnieDialog} onOpenChange={setShowVinnieDialog} />
+          
+          {showRandomCityToast && (
+            <Toast
+              message="Try random city?"
+              actionLabel="Load City"
+              onAction={handleLoadRandomCity}
+              onDismiss={() => setShowRandomCityToast(false)}
+            />
+          )}
         </div>
       </TooltipProvider>
     );
@@ -253,6 +332,15 @@ export default function Game() {
         
         <VinnieDialog open={showVinnieDialog} onOpenChange={setShowVinnieDialog} />
         <CommandMenu />
+        
+        {showRandomCityToast && (
+          <Toast
+            message="Try random city?"
+            actionLabel="Load City"
+            onAction={handleLoadRandomCity}
+            onDismiss={() => setShowRandomCityToast(false)}
+          />
+        )}
       </div>
     </TooltipProvider>
   );
