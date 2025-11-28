@@ -18,6 +18,9 @@ import {
   RESIDENTIAL_BUILDINGS,
   COMMERCIAL_BUILDINGS,
   INDUSTRIAL_BUILDINGS,
+  Season,
+  Weather,
+  WeatherType,
 } from '@/types/game';
 import { generateCityName, generateWaterName } from './names';
 
@@ -643,6 +646,64 @@ function createServiceCoverage(size: number): ServiceCoverage {
 }
 
 
+// Get season based on month (Northern Hemisphere)
+export function getSeason(month: number): Season {
+  if (month >= 3 && month <= 5) return 'spring';
+  if (month >= 6 && month <= 8) return 'summer';
+  if (month >= 9 && month <= 11) return 'fall';
+  return 'winter';
+}
+
+// Get day length multiplier based on season (affects when day/night cycle transitions)
+export function getDayLengthMultiplier(season: Season): number {
+  switch (season) {
+    case 'spring': return 1.0; // Normal day length
+    case 'summer': return 1.2; // Longer days
+    case 'fall': return 0.9; // Shorter days
+    case 'winter': return 0.7; // Much shorter days
+  }
+}
+
+// Get base weather probabilities for a season
+function getSeasonWeatherProbabilities(season: Season): Record<WeatherType, number> {
+  switch (season) {
+    case 'spring':
+      return { clear: 0.5, rain: 0.35, snow: 0.0, lightning: 0.1, heat: 0.05 };
+    case 'summer':
+      return { clear: 0.4, rain: 0.25, snow: 0.0, lightning: 0.2, heat: 0.15 };
+    case 'fall':
+      return { clear: 0.45, rain: 0.4, snow: 0.05, lightning: 0.05, heat: 0.05 };
+    case 'winter':
+      return { clear: 0.3, rain: 0.1, snow: 0.5, lightning: 0.05, heat: 0.05 };
+  }
+}
+
+// Create initial weather
+function createInitialWeather(month: number): Weather {
+  const season = getSeason(month);
+  const probabilities = getSeasonWeatherProbabilities(season);
+  
+  // Pick weather type based on probabilities
+  const rand = Math.random();
+  let cumulative = 0;
+  let weatherType: WeatherType = 'clear';
+  
+  for (const [type, prob] of Object.entries(probabilities)) {
+    cumulative += prob;
+    if (rand <= cumulative) {
+      weatherType = type as WeatherType;
+      break;
+    }
+  }
+  
+  return {
+    type: weatherType,
+    intensity: weatherType === 'clear' ? 0 : 30 + Math.random() * 40,
+    duration: weatherType === 'clear' ? 100 + Math.random() * 200 : 50 + Math.random() * 150,
+    cloudCover: weatherType === 'clear' ? 10 + Math.random() * 20 : 50 + Math.random() * 50,
+  };
+}
+
 export function createInitialGameState(size: number = 60, cityName: string = 'New City'): GameState {
   const { grid, waterBodies } = generateTerrain(size);
   const adjacentCities = generateAdjacentCities();
@@ -670,6 +731,7 @@ export function createInitialGameState(size: number = 60, cityName: string = 'Ne
     disastersEnabled: true,
     adjacentCities,
     waterBodies,
+    weather: createInitialWeather(1),
   };
 }
 
@@ -1629,20 +1691,95 @@ export function simulateTick(state: GameState): GameState {
   const newStats = calculateStats(newGrid, size, newBudget, state.taxRate, newEffectiveTaxRate, services);
   newStats.money = state.stats.money;
 
+  // Weather simulation
+  let newWeather = { ...state.weather };
+  const season = getSeason(state.month);
+  
+  // Update weather duration
+  newWeather.duration -= 1;
+  
+  // If weather duration expired, generate new weather based on season
+  if (newWeather.duration <= 0) {
+    const probabilities = getSeasonWeatherProbabilities(season);
+    const rand = Math.random();
+    let cumulative = 0;
+    let weatherType: WeatherType = 'clear';
+    
+    for (const [type, prob] of Object.entries(probabilities)) {
+      cumulative += prob;
+      if (rand <= cumulative) {
+        weatherType = type as WeatherType;
+        break;
+      }
+    }
+    
+    newWeather = {
+      type: weatherType,
+      intensity: weatherType === 'clear' ? 0 : 30 + Math.random() * 40,
+      duration: weatherType === 'clear' ? 100 + Math.random() * 200 : 50 + Math.random() * 150,
+      cloudCover: weatherType === 'clear' ? 10 + Math.random() * 20 : 50 + Math.random() * 50,
+    };
+  }
+  
+  // Apply weather economic effects (minor impacts)
+  let weatherIncomeModifier = 1.0;
+  let weatherExpenseModifier = 1.0;
+  
+  switch (newWeather.type) {
+    case 'rain':
+      // Rain slightly reduces commercial activity but helps agriculture
+      weatherIncomeModifier = 0.98;
+      weatherExpenseModifier = 1.01; // Slightly higher maintenance
+      break;
+    case 'snow':
+      // Snow reduces activity significantly
+      weatherIncomeModifier = 0.92;
+      weatherExpenseModifier = 1.05; // Higher snow removal costs
+      break;
+    case 'lightning':
+      // Lightning can cause power issues
+      weatherIncomeModifier = 0.95;
+      weatherExpenseModifier = 1.03; // Power repair costs
+      break;
+    case 'heat':
+      // Heat reduces productivity
+      weatherIncomeModifier = 0.97;
+      weatherExpenseModifier = 1.02; // Higher cooling costs
+      break;
+    case 'clear':
+    default:
+      // No economic impact
+      break;
+  }
+  
+  // Apply weather modifiers to income/expenses
+  newStats.income = Math.floor(newStats.income * weatherIncomeModifier);
+  newStats.expenses = Math.floor(newStats.expenses * weatherExpenseModifier);
+
   // Update money on month change
   let newYear = state.year;
   let newMonth = state.month;
   let newDay = state.day;
   let newTick = state.tick + 1;
   
-  // Calculate visual hour for day/night cycle (much slower than game time)
-  // One full day/night cycle = 15 game days (450 ticks)
-  // This makes the cycle atmospheric rather than jarring
-  const totalTicks = ((state.year - 2024) * 12 * 30 * 30) + ((state.month - 1) * 30 * 30) + ((state.day - 1) * 30) + newTick;
-  const cycleLength = 450; // ticks per visual day (15 game days)
+  // SPEED UP DATE PROGRESSION: Reduce ticks per day from 30 to 10
+  // This makes days pass 3x faster without affecting animation speed
+  const TICKS_PER_DAY = 10;
+  
+  // Calculate visual hour for day/night cycle with season-based day length
+  // One full day/night cycle = 15 game days (450 ticks at old rate, 150 ticks at new rate)
+  // Season affects day length multiplier
+  const dayLengthMultiplier = getDayLengthMultiplier(season);
+  const baseCycleLength = 150; // ticks per visual day (15 game days at new rate)
+  const cycleLength = Math.floor(baseCycleLength * dayLengthMultiplier);
+  
+  const totalTicks = ((state.year - 2024) * 12 * 30 * TICKS_PER_DAY) + 
+                     ((state.month - 1) * 30 * TICKS_PER_DAY) + 
+                     ((state.day - 1) * TICKS_PER_DAY) + 
+                     newTick;
   const newHour = Math.floor((totalTicks % cycleLength) / cycleLength * 24);
 
-  if (newTick >= 30) {
+  if (newTick >= TICKS_PER_DAY) {
     newTick = 0;
     newDay++;
     // Weekly income/expense (deposit every 7 days at 1/4 monthly rate)
@@ -1704,6 +1841,7 @@ export function simulateTick(state: GameState): GameState {
     advisorMessages,
     notifications: newNotifications,
     history,
+    weather: newWeather,
   };
 }
 

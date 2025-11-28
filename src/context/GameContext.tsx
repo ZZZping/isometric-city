@@ -159,6 +159,15 @@ function loadGameState(): GameState | null {
         if (parsed.effectiveTaxRate === undefined) {
           parsed.effectiveTaxRate = parsed.taxRate ?? 9; // Start at current tax rate
         }
+        // Ensure weather exists for backward compatibility
+        if (!parsed.weather) {
+          parsed.weather = {
+            type: 'clear',
+            intensity: 0,
+            duration: 100,
+            cloudCover: 20,
+          };
+        }
         // Migrate constructionProgress for existing buildings (they're already built)
         if (parsed.grid) {
           for (let y = 0; y < parsed.grid.length; y++) {
@@ -563,6 +572,15 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         // Ensure effectiveTaxRate exists for lagging tax effect
         if (parsed.effectiveTaxRate === undefined) {
           parsed.effectiveTaxRate = parsed.taxRate ?? 9;
+        }
+        // Ensure weather exists for backward compatibility
+        if (!parsed.weather) {
+          parsed.weather = {
+            type: 'clear',
+            intensity: 0,
+            duration: 100,
+            cloudCover: 20,
+          };
         }
         // Migrate constructionProgress for existing buildings (they're already built)
         if (parsed.grid) {
