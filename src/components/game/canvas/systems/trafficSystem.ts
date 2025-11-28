@@ -1,8 +1,6 @@
 import type { MutableRefObject } from 'react';
 
 import {
-  TILE_WIDTH,
-  TILE_HEIGHT,
   CAR_COLORS,
   PEDESTRIAN_SKIN_COLORS,
   PEDESTRIAN_SHIRT_COLORS,
@@ -32,6 +30,7 @@ import type {
   PedestrianDestType,
   WorldRenderState,
 } from '@/components/game/types';
+import { TILE_WIDTH, TILE_HEIGHT } from '@/components/game/types';
 import type { BuildingType } from '@/types/game';
 
 export type CrimeType = 'robbery' | 'burglary' | 'disturbance' | 'traffic';
