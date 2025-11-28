@@ -112,6 +112,7 @@ import { drawPedestrians as drawPedestriansUtil } from '@/components/game/drawPe
 import { useVehicleSystems, VehicleSystemRefs, VehicleSystemState } from '@/components/game/vehicleSystems';
 import { useBuildingHelpers } from '@/components/game/buildingHelpers';
 import { useAircraftSystems, AircraftSystemRefs, AircraftSystemState } from '@/components/game/aircraftSystems';
+import { useTrainSystem, TrainSystemRefs, TrainSystemState } from '@/components/game/trainSystem';
 import {
   analyzeMergedRoad,
   getAdjacentRoads,
@@ -203,6 +204,11 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
   const boatIdRef = useRef(0);
   const boatSpawnTimerRef = useRef(0);
 
+  // Train system refs
+  const trainsRef = useRef<import('./types').Train[]>([]);
+  const trainIdRef = useRef(0);
+  const trainSpawnTimerRef = useRef(0);
+
   // Navigation light flash timer for planes/helicopters/boats at night
   const navLightFlashTimerRef = useRef(0);
 
@@ -223,6 +229,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
 
   // Performance: Cache expensive grid calculations
   const cachedRoadTileCountRef = useRef<{ count: number; gridVersion: number }>({ count: 0, gridVersion: -1 });
+  const cachedRailTileCountRef = useRef<{ count: number; gridVersion: number }>({ count: 0, gridVersion: -1 });
   const cachedPopulationRef = useRef<{ count: number; gridVersion: number }>({ count: 0, gridVersion: -1 });
   const gridVersionRef = useRef(0);
   
@@ -327,6 +334,28 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     updateAirplanes,
     updateHelicopters,
   } = useAircraftSystems(aircraftSystemRefs, aircraftSystemState);
+
+  // Use train system
+  const trainSystemRefs: TrainSystemRefs = {
+    trainsRef,
+    trainIdRef,
+    trainSpawnTimerRef,
+  };
+
+  const trainSystemState: TrainSystemState = {
+    worldStateRef,
+    gridVersionRef,
+    cachedRailTileCountRef,
+    state: {
+      stats: state.stats,
+    },
+    isMobile,
+  };
+
+  const {
+    updateTrains,
+    drawTrains,
+  } = useTrainSystem(trainSystemRefs, trainSystemState);
   
   useEffect(() => {
     worldStateRef.current.grid = grid;
@@ -2325,6 +2354,122 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       }
     }
     
+    // Draw rail tracks
+    function drawRail(ctx: CanvasRenderingContext2D, x: number, y: number, gridX: number, gridY: number, currentZoom: number) {
+      const w = TILE_WIDTH;
+      const h = TILE_HEIGHT;
+      const cx = x + w / 2;
+      const cy = y + h / 2;
+      
+      // Check adjacency (in isometric coordinates)
+      const hasRail = (gx: number, gy: number): boolean => {
+        if (gx < 0 || gy < 0 || gx >= gridSize || gy >= gridSize) return false;
+        return grid[gy][gx].building.type === 'rail';
+      };
+      
+      const north = hasRail(gridX - 1, gridY);
+      const east = hasRail(gridX, gridY - 1);
+      const south = hasRail(gridX + 1, gridY);
+      const west = hasRail(gridX, gridY + 1);
+      
+      // Rail track width (narrower than roads)
+      const railW = w * 0.08;
+      const tieSpacing = 8; // Distance between ties
+      
+      // Calculate edge midpoints
+      const northEdgeX = x + w * 0.25;
+      const northEdgeY = y + h * 0.25;
+      const eastEdgeX = x + w * 0.75;
+      const eastEdgeY = y + h * 0.25;
+      const southEdgeX = x + w * 0.75;
+      const southEdgeY = y + h * 0.75;
+      const westEdgeX = x + w * 0.25;
+      const westEdgeY = y + h * 0.75;
+      
+      // Direction vectors
+      const northDx = (northEdgeX - cx) / Math.hypot(northEdgeX - cx, northEdgeY - cy);
+      const northDy = (northEdgeY - cy) / Math.hypot(northEdgeX - cx, northEdgeY - cy);
+      const eastDx = (eastEdgeX - cx) / Math.hypot(eastEdgeX - cx, eastEdgeY - cy);
+      const eastDy = (eastEdgeY - cy) / Math.hypot(eastEdgeX - cx, eastEdgeY - cy);
+      const southDx = (southEdgeX - cx) / Math.hypot(southEdgeX - cx, southEdgeY - cy);
+      const southDy = (southEdgeY - cy) / Math.hypot(southEdgeX - cx, southEdgeY - cy);
+      const westDx = (westEdgeX - cx) / Math.hypot(westEdgeX - cx, westEdgeY - cy);
+      const westDy = (westEdgeY - cy) / Math.hypot(westEdgeX - cx, westEdgeY - cy);
+      
+      const getPerp = (dx: number, dy: number) => ({ nx: -dy, ny: dx });
+      
+      // Draw rail tracks (two parallel lines with ties)
+      ctx.strokeStyle = '#8b4513'; // Brown ties
+      ctx.lineWidth = 1;
+      
+      // Draw ties (perpendicular to track direction)
+      const drawTies = (startX: number, startY: number, endX: number, endY: number, dirDx: number, dirDy: number) => {
+        if (currentZoom < 0.6) return; // Only draw ties when zoomed in
+        
+        const perp = getPerp(dirDx, dirDy);
+        const len = Math.hypot(endX - startX, endY - startY);
+        const numTies = Math.floor(len / tieSpacing);
+        
+        for (let i = 0; i <= numTies; i++) {
+          const t = i / Math.max(1, numTies);
+          const tieX = startX + (endX - startX) * t;
+          const tieY = startY + (endY - startY) * t;
+          
+          ctx.beginPath();
+          ctx.moveTo(tieX - perp.nx * railW * 1.5, tieY - perp.ny * railW * 1.5);
+          ctx.lineTo(tieX + perp.nx * railW * 1.5, tieY + perp.ny * railW * 1.5);
+          ctx.stroke();
+        }
+      };
+      
+      // Draw rails (two parallel lines)
+      ctx.strokeStyle = '#1a1a1a'; // Dark rail color
+      ctx.lineWidth = 1.5;
+      
+      const drawRailSegment = (startX: number, startY: number, endX: number, endY: number, dirDx: number, dirDy: number) => {
+        const perp = getPerp(dirDx, dirDy);
+        const halfWidth = railW * 0.5;
+        
+        // Draw ties first (behind rails)
+        drawTies(startX, startY, endX, endY, dirDx, dirDy);
+        
+        // Draw two parallel rail lines
+        ctx.beginPath();
+        ctx.moveTo(startX + perp.nx * halfWidth, startY + perp.ny * halfWidth);
+        ctx.lineTo(endX + perp.nx * halfWidth, endY + perp.ny * halfWidth);
+        ctx.stroke();
+        
+        ctx.beginPath();
+        ctx.moveTo(startX - perp.nx * halfWidth, startY - perp.ny * halfWidth);
+        ctx.lineTo(endX - perp.nx * halfWidth, endY - perp.ny * halfWidth);
+        ctx.stroke();
+      };
+      
+      // Draw rail segments for each direction
+      if (north) {
+        drawRailSegment(cx, cy, northEdgeX, northEdgeY, northDx, northDy);
+      }
+      if (east) {
+        drawRailSegment(cx, cy, eastEdgeX, eastEdgeY, eastDx, eastDy);
+      }
+      if (south) {
+        drawRailSegment(cx, cy, southEdgeX, southEdgeY, southDx, southDy);
+      }
+      if (west) {
+        drawRailSegment(cx, cy, westEdgeX, westEdgeY, westDx, westDy);
+      }
+      
+      // Draw center intersection if multiple directions
+      const connectionCount = [north, east, south, west].filter(Boolean).length;
+      if (connectionCount >= 2) {
+        // Draw small center circle for intersection
+        ctx.fillStyle = '#1a1a1a';
+        ctx.beginPath();
+        ctx.arc(cx, cy, railW * 0.8, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    
     // Draw isometric tile base
     function drawIsometricTile(ctx: CanvasRenderingContext2D, x: number, y: number, tile: Tile, highlight: boolean, currentZoom: number, skipGreyBase: boolean = false, skipGreenBase: boolean = false) {
       const w = TILE_WIDTH;
@@ -2357,6 +2502,11 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         leftColor = '#3a3a3a';
         rightColor = '#5a5a5a';
         strokeColor = '#333';
+      } else if (tile.building.type === 'rail') {
+        topColor = '#2a2a2a';
+        leftColor = '#1a1a1a';
+        rightColor = '#3a3a3a';
+        strokeColor = '#1a1a1a';
       } else if (isPark) {
         topColor = '#4a7c3f';
         leftColor = '#3d6634';
@@ -2467,6 +2617,12 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       // Handle roads separately with adjacency
       if (buildingType === 'road') {
         drawRoad(ctx, x, y, tile.x, tile.y, zoom);
+        return;
+      }
+      
+      // Handle rails separately
+      if (buildingType === 'rail') {
+        drawRail(ctx, x, y, tile.x, tile.y, zoom);
         return;
       }
       
@@ -3484,6 +3640,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         updateCrimeIncidents(delta); // Update/decay crime incidents
         updateEmergencyVehicles(delta); // Update emergency vehicles!
         updatePedestrians(delta); // Update pedestrians (zoom-gated)
+        updateTrains(delta); // Update trains!
         updateAirplanes(delta); // Update airplanes (airport required)
         updateHelicopters(delta); // Update helicopters (hospital/airport required)
         updateBoats(delta); // Update boats (marina/pier required)
@@ -3504,6 +3661,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         drawBoats(ctx); // Draw boats on water
         drawSmog(ctx); // Draw factory smog (above ground, below aircraft)
         drawEmergencyVehicles(ctx); // Draw emergency vehicles!
+        drawTrains(ctx); // Draw trains!
         drawIncidentIndicators(ctx, delta); // Draw fire/crime incident indicators!
         drawHelicopters(ctx); // Draw helicopters (below planes, above ground)
         drawAirplanes(ctx); // Draw airplanes above everything
@@ -3513,7 +3671,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     
     animationFrameId = requestAnimationFrame(render);
     return () => cancelAnimationFrame(animationFrameId);
-  }, [canvasSize.width, canvasSize.height, updateCars, drawCars, spawnCrimeIncidents, updateCrimeIncidents, updateEmergencyVehicles, drawEmergencyVehicles, updatePedestrians, drawPedestrians, updateAirplanes, drawAirplanes, updateHelicopters, drawHelicopters, updateBoats, drawBoats, drawIncidentIndicators, updateFireworks, drawFireworks, updateSmog, drawSmog, visualHour, isMobile]);
+  }, [canvasSize.width, canvasSize.height, updateCars, drawCars, spawnCrimeIncidents, updateCrimeIncidents, updateEmergencyVehicles, drawEmergencyVehicles, updatePedestrians, drawPedestrians, updateTrains, drawTrains, updateAirplanes, drawAirplanes, updateHelicopters, drawHelicopters, updateBoats, drawBoats, drawIncidentIndicators, updateFireworks, drawFireworks, updateSmog, drawSmog, visualHour, isMobile]);
   
   // Day/Night cycle lighting rendering - optimized for performance
   useEffect(() => {
@@ -3806,7 +3964,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
             // Place immediately on first click
             placeAtTile(gridX, gridY);
             // Track initial tile for roads and subways
-            if (selectedTool === 'road' || selectedTool === 'subway') {
+            if (selectedTool === 'road' || selectedTool === 'subway' || selectedTool === 'rail') {
               placedRoadTilesRef.current.add(`${gridX},${gridY}`);
             }
           }
@@ -3924,7 +4082,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
           setDragEndTile({ x: gridX, y: gridY });
         }
         // For roads and subways, use straight-line snapping
-        else if (isDragging && (selectedTool === 'road' || selectedTool === 'subway') && dragStartTile) {
+        else if (isDragging && (selectedTool === 'road' || selectedTool === 'subway' || selectedTool === 'rail') && dragStartTile) {
           const dx = Math.abs(gridX - dragStartTile.x);
           const dy = Math.abs(gridY - dragStartTile.y);
           
