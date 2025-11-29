@@ -252,6 +252,30 @@ const ISO_EW = { x: -0.894427, y: 0.447214 };
 const NEG_ISO_EW = { x: -ISO_EW.x, y: -ISO_EW.y };
 const NEG_ISO_NS = { x: -ISO_NS.x, y: -ISO_NS.y };
 
+type Point = { x: number; y: number };
+
+type EdgePoints = {
+  northEdge: Point;
+  eastEdge: Point;
+  southEdge: Point;
+  westEdge: Point;
+  center: Point;
+};
+
+type TJunctionCurve = {
+  start: Point;
+  control: Point;
+  end: Point;
+  fromPerp: Point;
+  toPerp: Point;
+  fromDir: Point;
+  toDir: Point;
+};
+
+const TJUNCTION_CURVE_SPREAD_RATIO = 0.18;
+const TJUNCTION_CURVE_BRANCH_PULL = 0.6;
+const TJUNCTION_CURVE_PERP_OFFSET = 0.35;
+
 /** Offset a point along a perpendicular direction */
 function offsetPoint(
   pt: { x: number; y: number },
@@ -259,6 +283,95 @@ function offsetPoint(
   amount: number
 ): { x: number; y: number } {
   return { x: pt.x + perp.x * amount, y: pt.y + perp.y * amount };
+}
+
+const normalizePoint = (vec: Point): Point => {
+  const len = Math.hypot(vec.x, vec.y) || 1;
+  return { x: vec.x / len, y: vec.y / len };
+};
+
+function getTJunctionCurves(
+  trackType: TrackType,
+  edges: EdgePoints,
+  halfSep: number,
+  tileWidth: number
+): TJunctionCurve[] {
+  let branchEdge: Point;
+  let branchPerp: Point;
+  let mainPerp: Point;
+  let mainAxis: Point;
+  let outerTrackSign: 1 | -1;
+
+  switch (trackType) {
+    case 'junction_t_n':
+      branchEdge = edges.southEdge;
+      branchPerp = ISO_EW;
+      mainPerp = ISO_NS;
+      mainAxis = NEG_ISO_EW;
+      outerTrackSign = -1;
+      break;
+    case 'junction_t_s':
+      branchEdge = edges.northEdge;
+      branchPerp = ISO_EW;
+      mainPerp = ISO_NS;
+      mainAxis = NEG_ISO_EW;
+      outerTrackSign = 1;
+      break;
+    case 'junction_t_e':
+      branchEdge = edges.westEdge;
+      branchPerp = ISO_NS;
+      mainPerp = ISO_EW;
+      mainAxis = ISO_NS;
+      outerTrackSign = -1;
+      break;
+    case 'junction_t_w':
+      branchEdge = edges.eastEdge;
+      branchPerp = ISO_NS;
+      mainPerp = ISO_EW;
+      mainAxis = ISO_NS;
+      outerTrackSign = 1;
+      break;
+    default:
+      return [];
+  }
+
+  const anchorDistance = tileWidth * TJUNCTION_CURVE_SPREAD_RATIO;
+  const branchDir = normalizePoint({
+    x: edges.center.x - branchEdge.x,
+    y: edges.center.y - branchEdge.y,
+  });
+  const branchLength = Math.hypot(edges.center.x - branchEdge.x, edges.center.y - branchEdge.y);
+  const branchPull = branchLength * TJUNCTION_CURVE_BRANCH_PULL;
+  const branchControlBase = offsetPoint(branchEdge, branchDir, branchPull);
+  const targetBase = offsetPoint(edges.center, mainPerp, outerTrackSign * halfSep);
+
+  return [1, -1].map(sign => {
+    const start = offsetPoint(branchEdge, branchPerp, sign * halfSep);
+    const end = offsetPoint(targetBase, mainAxis, sign * anchorDistance);
+    const controlAlongMain = offsetPoint(branchControlBase, mainAxis, sign * anchorDistance * 0.6);
+    const control = offsetPoint(
+      controlAlongMain,
+      mainPerp,
+      outerTrackSign * halfSep * TJUNCTION_CURVE_PERP_OFFSET
+    );
+    const toDir =
+      sign >= 0
+        ? mainAxis
+        : {
+            x: -mainAxis.x,
+            y: -mainAxis.y,
+          };
+
+    return {
+      start,
+      end,
+      control,
+      fromPerp: branchPerp,
+      toPerp: mainPerp,
+      fromDir: branchDir,
+      toDir,
+    };
+  });
 }
 
 /**
@@ -286,6 +399,7 @@ function drawBallast(
   const southEdge = { x: x + w * 0.75, y: y + h * 0.75 };
   const westEdge = { x: x + w * 0.25, y: y + h * 0.75 };
   const center = { x: cx, y: cy };
+  const edges: EdgePoints = { northEdge, eastEdge, southEdge, westEdge, center };
 
   ctx.fillStyle = RAIL_COLORS.BALLAST;
 
@@ -407,26 +521,42 @@ function drawBallast(
     case 'curve_sw':
       drawDoubleCurvedBallast(southEdge, westEdge, center, NEG_ISO_EW, NEG_ISO_NS, { x: 0, y: -1 });
       break;
-    case 'junction_t_n':
+    case 'junction_t_n': {
       drawDoubleStraightBallast(eastEdge, westEdge, ISO_NS);
-      drawDoubleStraightBallast(center, southEdge, ISO_EW);
+      const curves = getTJunctionCurves('junction_t_n', edges, halfSep, w);
+      curves.forEach(curve =>
+        drawSingleCurvedBallast(curve.start, curve.end, curve.control, curve.fromPerp, curve.toPerp)
+      );
       drawCenterBallast();
       break;
-    case 'junction_t_e':
+    }
+    case 'junction_t_e': {
       drawDoubleStraightBallast(northEdge, southEdge, ISO_EW);
-      drawDoubleStraightBallast(center, westEdge, ISO_NS);
+      const curves = getTJunctionCurves('junction_t_e', edges, halfSep, w);
+      curves.forEach(curve =>
+        drawSingleCurvedBallast(curve.start, curve.end, curve.control, curve.fromPerp, curve.toPerp)
+      );
       drawCenterBallast();
       break;
-    case 'junction_t_s':
+    }
+    case 'junction_t_s': {
       drawDoubleStraightBallast(eastEdge, westEdge, ISO_NS);
-      drawDoubleStraightBallast(center, northEdge, ISO_EW);
+      const curves = getTJunctionCurves('junction_t_s', edges, halfSep, w);
+      curves.forEach(curve =>
+        drawSingleCurvedBallast(curve.start, curve.end, curve.control, curve.fromPerp, curve.toPerp)
+      );
       drawCenterBallast();
       break;
-    case 'junction_t_w':
+    }
+    case 'junction_t_w': {
       drawDoubleStraightBallast(northEdge, southEdge, ISO_EW);
-      drawDoubleStraightBallast(center, eastEdge, ISO_NS);
+      const curves = getTJunctionCurves('junction_t_w', edges, halfSep, w);
+      curves.forEach(curve =>
+        drawSingleCurvedBallast(curve.start, curve.end, curve.control, curve.fromPerp, curve.toPerp)
+      );
       drawCenterBallast();
       break;
+    }
     case 'junction_cross':
       drawDoubleStraightBallast(northEdge, southEdge, ISO_EW);
       drawDoubleStraightBallast(eastEdge, westEdge, ISO_NS);
@@ -500,6 +630,7 @@ function drawTies(
   const southEdge = { x: x + w * 0.75, y: y + h * 0.75 };
   const westEdge = { x: x + w * 0.25, y: y + h * 0.75 };
   const center = { x: cx, y: cy };
+  const edges: EdgePoints = { northEdge, eastEdge, southEdge, westEdge, center };
 
   ctx.fillStyle = RAIL_COLORS.TIE;
 
@@ -615,22 +746,38 @@ function drawTies(
     case 'curve_sw':
       drawDoubleCurveTies(southEdge, westEdge, center, NEG_ISO_EW, NEG_ISO_NS, NEG_ISO_EW, NEG_ISO_NS, { x: 0, y: -1 }, TIES_PER_TILE);
       break;
-    case 'junction_t_n':
+    case 'junction_t_n': {
       drawDoubleTies(eastEdge, westEdge, ISO_NS, ISO_NS, TIES_PER_TILE);
-      drawDoubleTies(center, southEdge, ISO_EW, ISO_EW, tiesHalf);
+      const curves = getTJunctionCurves('junction_t_n', edges, halfSep, w);
+      curves.forEach(curve =>
+        drawSingleCurveTies(curve.start, curve.end, curve.control, curve.fromDir, curve.toDir, tiesHalf)
+      );
       break;
-    case 'junction_t_e':
+    }
+    case 'junction_t_e': {
       drawDoubleTies(northEdge, southEdge, ISO_EW, ISO_EW, TIES_PER_TILE);
-      drawDoubleTies(center, westEdge, ISO_NS, ISO_NS, tiesHalf);
+      const curves = getTJunctionCurves('junction_t_e', edges, halfSep, w);
+      curves.forEach(curve =>
+        drawSingleCurveTies(curve.start, curve.end, curve.control, curve.fromDir, curve.toDir, tiesHalf)
+      );
       break;
-    case 'junction_t_s':
+    }
+    case 'junction_t_s': {
       drawDoubleTies(eastEdge, westEdge, ISO_NS, ISO_NS, TIES_PER_TILE);
-      drawDoubleTies(center, northEdge, ISO_EW, ISO_EW, tiesHalf);
+      const curves = getTJunctionCurves('junction_t_s', edges, halfSep, w);
+      curves.forEach(curve =>
+        drawSingleCurveTies(curve.start, curve.end, curve.control, curve.fromDir, curve.toDir, tiesHalf)
+      );
       break;
-    case 'junction_t_w':
+    }
+    case 'junction_t_w': {
       drawDoubleTies(northEdge, southEdge, ISO_EW, ISO_EW, TIES_PER_TILE);
-      drawDoubleTies(center, eastEdge, ISO_NS, ISO_NS, tiesHalf);
+      const curves = getTJunctionCurves('junction_t_w', edges, halfSep, w);
+      curves.forEach(curve =>
+        drawSingleCurveTies(curve.start, curve.end, curve.control, curve.fromDir, curve.toDir, tiesHalf)
+      );
       break;
+    }
     case 'junction_cross':
       drawDoubleTies(northEdge, southEdge, ISO_EW, ISO_EW, TIES_PER_TILE);
       drawDoubleTies(eastEdge, westEdge, ISO_NS, ISO_NS, TIES_PER_TILE);
@@ -693,6 +840,7 @@ function drawRails(
   const southEdge = { x: x + w * 0.75, y: y + h * 0.75 };
   const westEdge = { x: x + w * 0.25, y: y + h * 0.75 };
   const center = { x: cx, y: cy };
+  const edges: EdgePoints = { northEdge, eastEdge, southEdge, westEdge, center };
 
   const halfGauge = railGauge / 2;
 
@@ -836,22 +984,38 @@ function drawRails(
     case 'curve_sw':
       drawDoubleCurvedRails(southEdge, westEdge, center, NEG_ISO_EW, NEG_ISO_NS, { x: 0, y: -1 });
       break;
-    case 'junction_t_n':
+    case 'junction_t_n': {
       drawDoubleStraightRails(eastEdge, westEdge, ISO_NS);
-      drawDoubleStraightRails(center, southEdge, ISO_EW);
+      const curves = getTJunctionCurves('junction_t_n', edges, halfSep, w);
+      curves.forEach(curve =>
+        drawSingleCurvedRails(curve.start, curve.end, curve.control, curve.fromPerp, curve.toPerp)
+      );
       break;
-    case 'junction_t_e':
+    }
+    case 'junction_t_e': {
       drawDoubleStraightRails(northEdge, southEdge, ISO_EW);
-      drawDoubleStraightRails(center, westEdge, ISO_NS);
+      const curves = getTJunctionCurves('junction_t_e', edges, halfSep, w);
+      curves.forEach(curve =>
+        drawSingleCurvedRails(curve.start, curve.end, curve.control, curve.fromPerp, curve.toPerp)
+      );
       break;
-    case 'junction_t_s':
+    }
+    case 'junction_t_s': {
       drawDoubleStraightRails(eastEdge, westEdge, ISO_NS);
-      drawDoubleStraightRails(center, northEdge, ISO_EW);
+      const curves = getTJunctionCurves('junction_t_s', edges, halfSep, w);
+      curves.forEach(curve =>
+        drawSingleCurvedRails(curve.start, curve.end, curve.control, curve.fromPerp, curve.toPerp)
+      );
       break;
-    case 'junction_t_w':
+    }
+    case 'junction_t_w': {
       drawDoubleStraightRails(northEdge, southEdge, ISO_EW);
-      drawDoubleStraightRails(center, eastEdge, ISO_NS);
+      const curves = getTJunctionCurves('junction_t_w', edges, halfSep, w);
+      curves.forEach(curve =>
+        drawSingleCurvedRails(curve.start, curve.end, curve.control, curve.fromPerp, curve.toPerp)
+      );
       break;
+    }
     case 'junction_cross':
       drawDoubleStraightRails(northEdge, southEdge, ISO_EW);
       drawDoubleStraightRails(eastEdge, westEdge, ISO_NS);
