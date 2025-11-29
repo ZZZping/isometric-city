@@ -22,6 +22,24 @@ export type Car = {
   laneOffset: number;
 };
 
+// Train types
+export type TrainType = 'passenger' | 'freight';
+
+export type Train = {
+  id: number;
+  tileX: number;
+  tileY: number;
+  direction: CarDirection;
+  progress: number;
+  speed: number;
+  age: number;
+  maxAge: number;
+  type: TrainType;
+  carriages: number; // Number of carriages (1-5)
+  color: string;
+  trackOffset: number; // Offset on track (for two parallel tracks)
+};
+
 // Airplane types for airport animation
 export type AirplaneState = 'flying' | 'landing' | 'taking_off' | 'taxiing';
 

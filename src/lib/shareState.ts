@@ -13,7 +13,7 @@ const BUILDING_TYPES: BuildingType[] = [
   'shop_small', 'shop_medium', 'office_low', 'office_high', 'mall',
   'factory_small', 'factory_medium', 'factory_large', 'warehouse',
   'police_station', 'fire_station', 'hospital', 'school', 'university',
-  'park', 'park_large', 'tennis', 'power_plant', 'water_tower', 'subway_station',
+  'park', 'park_large', 'tennis', 'power_plant', 'water_tower', 'subway_station', 'rail', 'rail_station',
   'stadium', 'museum', 'airport', 'space_program', 'city_hall', 'amusement_park',
   'basketball_courts', 'playground_small', 'playground_large', 'baseball_field_small',
   'soccer_field_small', 'football_field', 'baseball_stadium', 'community_center',
