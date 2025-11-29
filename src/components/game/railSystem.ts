@@ -407,26 +407,106 @@ function drawBallast(
     case 'curve_sw':
       drawDoubleCurvedBallast(southEdge, westEdge, center, NEG_ISO_EW, NEG_ISO_NS, { x: 0, y: -1 });
       break;
-    case 'junction_t_n':
+    case 'junction_t_n': {
+      // Horizontal tracks (top of T)
       drawDoubleStraightBallast(eastEdge, westEdge, ISO_NS);
-      drawDoubleStraightBallast(center, southEdge, ISO_EW);
+      
+      // Shortened vertical track (bottom of T) - reduced overlap
+      const verticalStart = {
+        x: center.x + ISO_NS.x * w * 0.15,
+        y: center.y + ISO_NS.y * w * 0.15
+      };
+      drawDoubleStraightBallast(verticalStart, southEdge, ISO_EW);
+      
+      // Curves from bottom vertical track to horizontal tracks
+      // Track 0 (left/inner) curves to east track 0 (further track)
+      const southTrack0Start = offsetPoint(verticalStart, ISO_EW, halfSep);
+      const eastTrack0End = offsetPoint(eastEdge, ISO_NS, halfSep);
+      drawSingleCurvedBallast(southTrack0Start, eastTrack0End, center, ISO_EW, ISO_NS);
+      
+      // Track 1 (right/outer) curves to west track 1 (further track)
+      const southTrack1Start = offsetPoint(verticalStart, ISO_EW, -halfSep);
+      const westTrack1End = offsetPoint(westEdge, ISO_NS, -halfSep);
+      drawSingleCurvedBallast(southTrack1Start, westTrack1End, center, ISO_EW, NEG_ISO_NS);
+      
       drawCenterBallast();
       break;
-    case 'junction_t_e':
+    }
+    case 'junction_t_e': {
+      // Vertical tracks (top of T)
       drawDoubleStraightBallast(northEdge, southEdge, ISO_EW);
-      drawDoubleStraightBallast(center, westEdge, ISO_NS);
+      
+      // Shortened horizontal track (bottom of T) - reduced overlap
+      const horizontalStart = {
+        x: center.x + ISO_EW.x * w * 0.15,
+        y: center.y + ISO_EW.y * w * 0.15
+      };
+      drawDoubleStraightBallast(horizontalStart, westEdge, ISO_NS);
+      
+      // Curves from bottom horizontal track to vertical tracks
+      // Track 0 curves to north track 0 (further track)
+      const westTrack0Start = offsetPoint(horizontalStart, ISO_NS, halfSep);
+      const northTrack0End = offsetPoint(northEdge, ISO_EW, halfSep);
+      drawSingleCurvedBallast(westTrack0Start, northTrack0End, center, ISO_NS, NEG_ISO_EW);
+      
+      // Track 1 curves to south track 1 (further track)
+      const westTrack1Start = offsetPoint(horizontalStart, ISO_NS, -halfSep);
+      const southTrack1End = offsetPoint(southEdge, ISO_EW, -halfSep);
+      drawSingleCurvedBallast(westTrack1Start, southTrack1End, center, ISO_NS, ISO_EW);
+      
       drawCenterBallast();
       break;
-    case 'junction_t_s':
+    }
+    case 'junction_t_s': {
+      // Horizontal tracks (top of T)
       drawDoubleStraightBallast(eastEdge, westEdge, ISO_NS);
-      drawDoubleStraightBallast(center, northEdge, ISO_EW);
+      
+      // Shortened vertical track (bottom of T) - reduced overlap
+      const verticalStart = {
+        x: center.x - ISO_NS.x * w * 0.15,
+        y: center.y - ISO_NS.y * w * 0.15
+      };
+      drawDoubleStraightBallast(verticalStart, northEdge, ISO_EW);
+      
+      // Curves from bottom vertical track to horizontal tracks
+      // Track 0 (left/inner) curves to east track 0 (further track)
+      const northTrack0Start = offsetPoint(verticalStart, ISO_EW, halfSep);
+      const eastTrack0End = offsetPoint(eastEdge, ISO_NS, halfSep);
+      drawSingleCurvedBallast(northTrack0Start, eastTrack0End, center, ISO_EW, ISO_NS);
+      
+      // Track 1 (right/outer) curves to west track 1 (further track)
+      const northTrack1Start = offsetPoint(verticalStart, ISO_EW, -halfSep);
+      const westTrack1End = offsetPoint(westEdge, ISO_NS, -halfSep);
+      drawSingleCurvedBallast(northTrack1Start, westTrack1End, center, ISO_EW, NEG_ISO_NS);
+      
       drawCenterBallast();
       break;
-    case 'junction_t_w':
+    }
+    case 'junction_t_w': {
+      // Vertical tracks (top of T)
       drawDoubleStraightBallast(northEdge, southEdge, ISO_EW);
-      drawDoubleStraightBallast(center, eastEdge, ISO_NS);
+      
+      // Shortened horizontal track (bottom of T) - reduced overlap
+      const horizontalStart = {
+        x: center.x - ISO_EW.x * w * 0.15,
+        y: center.y - ISO_EW.y * w * 0.15
+      };
+      drawDoubleStraightBallast(horizontalStart, eastEdge, ISO_NS);
+      
+      // Curves from bottom horizontal track to vertical tracks
+      // Track 0 curves to north track 0 (further track)
+      const eastTrack0Start = offsetPoint(horizontalStart, ISO_NS, halfSep);
+      const northTrack0End = offsetPoint(northEdge, ISO_EW, halfSep);
+      drawSingleCurvedBallast(eastTrack0Start, northTrack0End, center, ISO_NS, NEG_ISO_EW);
+      
+      // Track 1 curves to south track 1 (further track)
+      const eastTrack1Start = offsetPoint(horizontalStart, ISO_NS, -halfSep);
+      const southTrack1End = offsetPoint(southEdge, ISO_EW, -halfSep);
+      drawSingleCurvedBallast(eastTrack1Start, southTrack1End, center, ISO_NS, ISO_EW);
+      
       drawCenterBallast();
       break;
+    }
     case 'junction_cross':
       drawDoubleStraightBallast(northEdge, southEdge, ISO_EW);
       drawDoubleStraightBallast(eastEdge, westEdge, ISO_NS);
@@ -615,22 +695,90 @@ function drawTies(
     case 'curve_sw':
       drawDoubleCurveTies(southEdge, westEdge, center, NEG_ISO_EW, NEG_ISO_NS, NEG_ISO_EW, NEG_ISO_NS, { x: 0, y: -1 }, TIES_PER_TILE);
       break;
-    case 'junction_t_n':
+    case 'junction_t_n': {
+      // Horizontal tracks (top of T)
       drawDoubleTies(eastEdge, westEdge, ISO_NS, ISO_NS, TIES_PER_TILE);
-      drawDoubleTies(center, southEdge, ISO_EW, ISO_EW, tiesHalf);
+      
+      // Shortened vertical track (bottom of T)
+      const verticalStart = {
+        x: cx + ISO_NS.x * w * 0.15,
+        y: cy + ISO_NS.y * w * 0.15
+      };
+      drawDoubleTies(verticalStart, southEdge, ISO_EW, ISO_EW, tiesHalf);
+      
+      // Curves from bottom vertical track to horizontal tracks
+      const southTrack0Start = offsetPoint(verticalStart, ISO_EW, halfSep);
+      const eastTrack0End = offsetPoint(eastEdge, ISO_NS, halfSep);
+      drawSingleCurveTies(southTrack0Start, eastTrack0End, center, ISO_EW, ISO_NS, 3);
+      
+      const southTrack1Start = offsetPoint(verticalStart, ISO_EW, -halfSep);
+      const westTrack1End = offsetPoint(westEdge, ISO_NS, -halfSep);
+      drawSingleCurveTies(southTrack1Start, westTrack1End, center, ISO_EW, NEG_ISO_NS, 3);
       break;
-    case 'junction_t_e':
+    }
+    case 'junction_t_e': {
+      // Vertical tracks (top of T)
       drawDoubleTies(northEdge, southEdge, ISO_EW, ISO_EW, TIES_PER_TILE);
-      drawDoubleTies(center, westEdge, ISO_NS, ISO_NS, tiesHalf);
+      
+      // Shortened horizontal track (bottom of T)
+      const horizontalStart = {
+        x: cx + ISO_EW.x * w * 0.15,
+        y: cy + ISO_EW.y * w * 0.15
+      };
+      drawDoubleTies(horizontalStart, westEdge, ISO_NS, ISO_NS, tiesHalf);
+      
+      // Curves from bottom horizontal track to vertical tracks
+      const westTrack0Start = offsetPoint(horizontalStart, ISO_NS, halfSep);
+      const northTrack0End = offsetPoint(northEdge, ISO_EW, halfSep);
+      drawSingleCurveTies(westTrack0Start, northTrack0End, center, ISO_NS, NEG_ISO_EW, 3);
+      
+      const westTrack1Start = offsetPoint(horizontalStart, ISO_NS, -halfSep);
+      const southTrack1End = offsetPoint(southEdge, ISO_EW, -halfSep);
+      drawSingleCurveTies(westTrack1Start, southTrack1End, center, ISO_NS, ISO_EW, 3);
       break;
-    case 'junction_t_s':
+    }
+    case 'junction_t_s': {
+      // Horizontal tracks (top of T)
       drawDoubleTies(eastEdge, westEdge, ISO_NS, ISO_NS, TIES_PER_TILE);
-      drawDoubleTies(center, northEdge, ISO_EW, ISO_EW, tiesHalf);
+      
+      // Shortened vertical track (bottom of T)
+      const verticalStart = {
+        x: cx - ISO_NS.x * w * 0.15,
+        y: cy - ISO_NS.y * w * 0.15
+      };
+      drawDoubleTies(verticalStart, northEdge, ISO_EW, ISO_EW, tiesHalf);
+      
+      // Curves from bottom vertical track to horizontal tracks
+      const northTrack0Start = offsetPoint(verticalStart, ISO_EW, halfSep);
+      const eastTrack0End = offsetPoint(eastEdge, ISO_NS, halfSep);
+      drawSingleCurveTies(northTrack0Start, eastTrack0End, center, ISO_EW, ISO_NS, 3);
+      
+      const northTrack1Start = offsetPoint(verticalStart, ISO_EW, -halfSep);
+      const westTrack1End = offsetPoint(westEdge, ISO_NS, -halfSep);
+      drawSingleCurveTies(northTrack1Start, westTrack1End, center, ISO_EW, NEG_ISO_NS, 3);
       break;
-    case 'junction_t_w':
+    }
+    case 'junction_t_w': {
+      // Vertical tracks (top of T)
       drawDoubleTies(northEdge, southEdge, ISO_EW, ISO_EW, TIES_PER_TILE);
-      drawDoubleTies(center, eastEdge, ISO_NS, ISO_NS, tiesHalf);
+      
+      // Shortened horizontal track (bottom of T)
+      const horizontalStart = {
+        x: cx - ISO_EW.x * w * 0.15,
+        y: cy - ISO_EW.y * w * 0.15
+      };
+      drawDoubleTies(horizontalStart, eastEdge, ISO_NS, ISO_NS, tiesHalf);
+      
+      // Curves from bottom horizontal track to vertical tracks
+      const eastTrack0Start = offsetPoint(horizontalStart, ISO_NS, halfSep);
+      const northTrack0End = offsetPoint(northEdge, ISO_EW, halfSep);
+      drawSingleCurveTies(eastTrack0Start, northTrack0End, center, ISO_NS, NEG_ISO_EW, 3);
+      
+      const eastTrack1Start = offsetPoint(horizontalStart, ISO_NS, -halfSep);
+      const southTrack1End = offsetPoint(southEdge, ISO_EW, -halfSep);
+      drawSingleCurveTies(eastTrack1Start, southTrack1End, center, ISO_NS, ISO_EW, 3);
       break;
+    }
     case 'junction_cross':
       drawDoubleTies(northEdge, southEdge, ISO_EW, ISO_EW, TIES_PER_TILE);
       drawDoubleTies(eastEdge, westEdge, ISO_NS, ISO_NS, TIES_PER_TILE);
@@ -836,22 +984,90 @@ function drawRails(
     case 'curve_sw':
       drawDoubleCurvedRails(southEdge, westEdge, center, NEG_ISO_EW, NEG_ISO_NS, { x: 0, y: -1 });
       break;
-    case 'junction_t_n':
+    case 'junction_t_n': {
+      // Horizontal tracks (top of T)
       drawDoubleStraightRails(eastEdge, westEdge, ISO_NS);
-      drawDoubleStraightRails(center, southEdge, ISO_EW);
+      
+      // Shortened vertical track (bottom of T)
+      const verticalStart = {
+        x: cx + ISO_NS.x * w * 0.15,
+        y: cy + ISO_NS.y * w * 0.15
+      };
+      drawDoubleStraightRails(verticalStart, southEdge, ISO_EW);
+      
+      // Curves from bottom vertical track to horizontal tracks
+      const southTrack0Start = offsetPoint(verticalStart, ISO_EW, halfSep);
+      const eastTrack0End = offsetPoint(eastEdge, ISO_NS, halfSep);
+      drawSingleCurvedRails(southTrack0Start, eastTrack0End, center, ISO_EW, ISO_NS);
+      
+      const southTrack1Start = offsetPoint(verticalStart, ISO_EW, -halfSep);
+      const westTrack1End = offsetPoint(westEdge, ISO_NS, -halfSep);
+      drawSingleCurvedRails(southTrack1Start, westTrack1End, center, ISO_EW, NEG_ISO_NS);
       break;
-    case 'junction_t_e':
+    }
+    case 'junction_t_e': {
+      // Vertical tracks (top of T)
       drawDoubleStraightRails(northEdge, southEdge, ISO_EW);
-      drawDoubleStraightRails(center, westEdge, ISO_NS);
+      
+      // Shortened horizontal track (bottom of T)
+      const horizontalStart = {
+        x: cx + ISO_EW.x * w * 0.15,
+        y: cy + ISO_EW.y * w * 0.15
+      };
+      drawDoubleStraightRails(horizontalStart, westEdge, ISO_NS);
+      
+      // Curves from bottom horizontal track to vertical tracks
+      const westTrack0Start = offsetPoint(horizontalStart, ISO_NS, halfSep);
+      const northTrack0End = offsetPoint(northEdge, ISO_EW, halfSep);
+      drawSingleCurvedRails(westTrack0Start, northTrack0End, center, ISO_NS, NEG_ISO_EW);
+      
+      const westTrack1Start = offsetPoint(horizontalStart, ISO_NS, -halfSep);
+      const southTrack1End = offsetPoint(southEdge, ISO_EW, -halfSep);
+      drawSingleCurvedRails(westTrack1Start, southTrack1End, center, ISO_NS, ISO_EW);
       break;
-    case 'junction_t_s':
+    }
+    case 'junction_t_s': {
+      // Horizontal tracks (top of T)
       drawDoubleStraightRails(eastEdge, westEdge, ISO_NS);
-      drawDoubleStraightRails(center, northEdge, ISO_EW);
+      
+      // Shortened vertical track (bottom of T)
+      const verticalStart = {
+        x: cx - ISO_NS.x * w * 0.15,
+        y: cy - ISO_NS.y * w * 0.15
+      };
+      drawDoubleStraightRails(verticalStart, northEdge, ISO_EW);
+      
+      // Curves from bottom vertical track to horizontal tracks
+      const northTrack0Start = offsetPoint(verticalStart, ISO_EW, halfSep);
+      const eastTrack0End = offsetPoint(eastEdge, ISO_NS, halfSep);
+      drawSingleCurvedRails(northTrack0Start, eastTrack0End, center, ISO_EW, ISO_NS);
+      
+      const northTrack1Start = offsetPoint(verticalStart, ISO_EW, -halfSep);
+      const westTrack1End = offsetPoint(westEdge, ISO_NS, -halfSep);
+      drawSingleCurvedRails(northTrack1Start, westTrack1End, center, ISO_EW, NEG_ISO_NS);
       break;
-    case 'junction_t_w':
+    }
+    case 'junction_t_w': {
+      // Vertical tracks (top of T)
       drawDoubleStraightRails(northEdge, southEdge, ISO_EW);
-      drawDoubleStraightRails(center, eastEdge, ISO_NS);
+      
+      // Shortened horizontal track (bottom of T)
+      const horizontalStart = {
+        x: cx - ISO_EW.x * w * 0.15,
+        y: cy - ISO_EW.y * w * 0.15
+      };
+      drawDoubleStraightRails(horizontalStart, eastEdge, ISO_NS);
+      
+      // Curves from bottom horizontal track to vertical tracks
+      const eastTrack0Start = offsetPoint(horizontalStart, ISO_NS, halfSep);
+      const northTrack0End = offsetPoint(northEdge, ISO_EW, halfSep);
+      drawSingleCurvedRails(eastTrack0Start, northTrack0End, center, ISO_NS, NEG_ISO_EW);
+      
+      const eastTrack1Start = offsetPoint(horizontalStart, ISO_NS, -halfSep);
+      const southTrack1End = offsetPoint(southEdge, ISO_EW, -halfSep);
+      drawSingleCurvedRails(eastTrack1Start, southTrack1End, center, ISO_NS, ISO_EW);
       break;
+    }
     case 'junction_cross':
       drawDoubleStraightRails(northEdge, southEdge, ISO_EW);
       drawDoubleStraightRails(eastEdge, westEdge, ISO_NS);
