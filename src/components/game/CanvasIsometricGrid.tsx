@@ -690,10 +690,21 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       boat.age += delta;
       
       // Update wake particles (similar to contrails) - shorter on mobile
+      // PERF: Mutate in-place instead of creating new arrays
       const wakeMaxAge = isMobile ? 0.6 : WAKE_MAX_AGE;
-      boat.wake = boat.wake
-        .map(p => ({ ...p, age: p.age + delta, opacity: Math.max(0, 1 - p.age / wakeMaxAge) }))
-        .filter(p => p.age < wakeMaxAge);
+      let wakeWriteIndex = 0;
+      for (let i = 0; i < boat.wake.length; i++) {
+        const p = boat.wake[i];
+        p.age += delta;
+        p.opacity = Math.max(0, 1 - p.age / wakeMaxAge);
+        if (p.age < wakeMaxAge) {
+          if (wakeWriteIndex !== i) {
+            boat.wake[wakeWriteIndex] = p;
+          }
+          wakeWriteIndex++;
+        }
+      }
+      boat.wake.length = wakeWriteIndex;
       
       // Distance to destination
       const distToDest = Math.hypot(boat.x - boat.destScreenX, boat.y - boat.destScreenY);
@@ -1080,10 +1091,19 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       trainSpawnTimerRef.current = TRAIN_SPAWN_INTERVAL;
     }
 
-    // Update existing trains
-    trainsRef.current = trainsRef.current.filter(train => 
-      updateTrain(train, delta, speedMultiplier, currentGrid, currentGridSize)
-    );
+    // Update existing trains - PERF: Mutate in-place instead of creating new array
+    const trains = trainsRef.current;
+    let writeIndex = 0;
+    for (let i = 0; i < trains.length; i++) {
+      const train = trains[i];
+      if (updateTrain(train, delta, speedMultiplier, currentGrid, currentGridSize)) {
+        if (writeIndex !== i) {
+          trains[writeIndex] = train;
+        }
+        writeIndex++;
+      }
+    }
+    trains.length = writeIndex;
   }, []);
 
   // Draw trains on the rail network
@@ -1261,8 +1281,19 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
             for (const tp of particle.trail) {
               tp.age += delta;
             }
-            // Remove old trail particles
-            particle.trail = particle.trail.filter(tp => tp.age < 0.3);
+            // Remove old trail particles - PERF: Mutate in-place
+            const trail = particle.trail;
+            let trailWriteIndex = 0;
+            for (let j = 0; j < trail.length; j++) {
+              const tp = trail[j];
+              if (tp.age < 0.3) {
+                if (trailWriteIndex !== j) {
+                  trail[trailWriteIndex] = tp;
+                }
+                trailWriteIndex++;
+              }
+            }
+            trail.length = trailWriteIndex;
             
             particle.age += delta;
             particle.x += particle.vx * delta * speedMultiplier;
@@ -1519,29 +1550,34 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         smog.spawnTimer = 0;
       }
       
-      // Update existing particles
-      smog.particles = smog.particles.filter(particle => {
+      // Update existing particles - PERF: Mutate in-place instead of creating new array
+      const particles = smog.particles;
+      let writeIndex = 0;
+      for (let i = 0; i < particles.length; i++) {
+        const particle = particles[i];
         particle.age += adjustedDelta;
         
-        if (particle.age >= particle.maxAge) {
-          return false; // Remove old particles
+        if (particle.age < particle.maxAge) {
+          // Update position with drift
+          particle.x += particle.vx * adjustedDelta;
+          particle.y += particle.vy * adjustedDelta;
+          
+          // Slow down horizontal drift over time
+          particle.vx *= 0.995;
+          
+          // Slow down vertical rise as particle ages
+          particle.vy *= 0.998;
+          
+          // Grow particle size over time
+          particle.size += SMOG_PARTICLE_GROWTH * adjustedDelta;
+          
+          if (writeIndex !== i) {
+            particles[writeIndex] = particle;
+          }
+          writeIndex++;
         }
-        
-        // Update position with drift
-        particle.x += particle.vx * adjustedDelta;
-        particle.y += particle.vy * adjustedDelta;
-        
-        // Slow down horizontal drift over time
-        particle.vx *= 0.995;
-        
-        // Slow down vertical rise as particle ages
-        particle.vy *= 0.998;
-        
-        // Grow particle size over time
-        particle.size += SMOG_PARTICLE_GROWTH * adjustedDelta;
-        
-        return true;
-      });
+      }
+      particles.length = writeIndex;
     }
   }, [findSmogFactoriesCallback, isMobile]);
 
@@ -1788,6 +1824,9 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     const baseTileQueue: BuildingDraw[] = [];
     const greenBaseTileQueue: BuildingDraw[] = [];
     const overlayQueue: OverlayDraw[] = [];
+    
+    // PERF: Cache building sizes per building type within this frame to avoid repeated lookups
+    const buildingSizeCache = new Map<BuildingType, { width: number; height: number }>();
     
     // PERF: Insertion sort for nearly-sorted arrays (O(n) vs O(n log n) for .sort())
     // Since tiles are iterated in diagonal order, queues are already nearly sorted
@@ -3336,9 +3375,19 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         const y = sum - x;
         if (y < 0 || y >= gridSize) continue;
         
+        // PERF: Early viewport culling before expensive gridToScreen calculation
+        // Approximate screen position using isometric math: screenX ≈ (x - y) * TILE_WIDTH/2, screenY ≈ (x + y) * TILE_HEIGHT/2
+        const approxScreenX = (x - y) * (TILE_WIDTH / 2);
+        const approxScreenY = (x + y) * (TILE_HEIGHT / 2);
+        // Quick approximate cull - if way outside viewport, skip expensive gridToScreen
+        if (approxScreenX + TILE_WIDTH * 2 < viewLeft || approxScreenX - TILE_WIDTH * 2 > viewRight ||
+            approxScreenY + TILE_HEIGHT * 5 < viewTop || approxScreenY - TILE_HEIGHT * 2 > viewBottom) {
+          continue;
+        }
+        
         const { screenX, screenY } = gridToScreen(x, y, 0, 0);
         
-        // Viewport culling
+        // Precise viewport culling
         if (screenX + TILE_WIDTH < viewLeft || screenX > viewRight ||
             screenY + TILE_HEIGHT * 4 < viewTop || screenY > viewBottom) {
           continue;
@@ -3377,7 +3426,12 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         
         // Separate water tiles into their own queue (drawn after base tiles, below other buildings)
         if (tile.building.type === 'water') {
-          const size = getBuildingSize(tile.building.type);
+          // PERF: Cache building size lookups
+          let size = buildingSizeCache.get(tile.building.type);
+          if (!size) {
+            size = getBuildingSize(tile.building.type);
+            buildingSizeCache.set(tile.building.type, size);
+          }
           const depth = x + y + size.width + size.height - 2;
           waterQueue.push({ screenX, screenY, tile, depth });
         }
@@ -3400,7 +3454,12 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         else {
           const isBuilding = tile.building.type !== 'grass' && tile.building.type !== 'empty';
           if (isBuilding) {
-            const size = getBuildingSize(tile.building.type);
+            // PERF: Cache building size lookups
+            let size = buildingSizeCache.get(tile.building.type);
+            if (!size) {
+              size = getBuildingSize(tile.building.type);
+              buildingSizeCache.set(tile.building.type, size);
+            }
             const depth = x + y + size.width + size.height - 2;
             buildingQueue.push({ screenX, screenY, tile, depth });
           }

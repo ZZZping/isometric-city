@@ -231,12 +231,16 @@ export function useVehicleSystems(
       if (activeCrimeIncidentsRef.current.size >= maxActiveCrimes) break;
       if (Math.random() > baseChance) continue;
       
-      const weightedTiles = eligibleTiles.filter(t => {
+      // PERF: Build weighted tiles array in-place instead of filter
+      const weightedTiles: typeof eligibleTiles = [];
+      for (const t of eligibleTiles) {
         const key = `${t.x},${t.y}`;
-        if (activeCrimeIncidentsRef.current.has(key)) return false;
+        if (activeCrimeIncidentsRef.current.has(key)) continue;
         const weight = Math.max(0.1, 1 - t.policeCoverage / 100);
-        return Math.random() < weight;
-      });
+        if (Math.random() < weight) {
+          weightedTiles.push(t);
+        }
+      }
       
       if (weightedTiles.length === 0) continue;
       
@@ -262,22 +266,38 @@ export function useVehicleSystems(
     const speedMultiplier = currentSpeed === 1 ? 1 : currentSpeed === 2 ? 2 : 3;
     const keysToDelete: string[] = [];
     
+    // PERF: Mutate crime objects in-place instead of creating new ones
     activeCrimeIncidentsRef.current.forEach((crime, key) => {
       if (activeCrimesRef.current.has(key)) return;
       
-      const newTimeRemaining = crime.timeRemaining - delta * speedMultiplier;
-      if (newTimeRemaining <= 0) {
+      crime.timeRemaining -= delta * speedMultiplier;
+      if (crime.timeRemaining <= 0) {
         keysToDelete.push(key);
-      } else {
-        activeCrimeIncidentsRef.current.set(key, { ...crime, timeRemaining: newTimeRemaining });
       }
     });
     
     keysToDelete.forEach(key => activeCrimeIncidentsRef.current.delete(key));
   }, [worldStateRef, activeCrimeIncidentsRef, activeCrimesRef]);
 
+  // PERF: Cache crime incidents array to avoid recreating on every call
+  const cachedCrimeIncidentsRef = useRef<{ x: number; y: number }[]>([]);
+  const lastCrimeIncidentsVersionRef = useRef(0);
+  
   const findCrimeIncidents = useCallback((): { x: number; y: number }[] => {
-    return Array.from(activeCrimeIncidentsRef.current.values()).map(c => ({ x: c.x, y: c.y }));
+    // PERF: Only rebuild array if incidents have changed
+    const currentVersion = activeCrimeIncidentsRef.current.size;
+    if (currentVersion === lastCrimeIncidentsVersionRef.current && cachedCrimeIncidentsRef.current.length > 0) {
+      return cachedCrimeIncidentsRef.current;
+    }
+    
+    // Rebuild cache
+    const incidents: { x: number; y: number }[] = [];
+    activeCrimeIncidentsRef.current.forEach(c => {
+      incidents.push({ x: c.x, y: c.y });
+    });
+    cachedCrimeIncidentsRef.current = incidents;
+    lastCrimeIncidentsVersionRef.current = currentVersion;
+    return incidents;
   }, [activeCrimeIncidentsRef]);
 
   const dispatchEmergencyVehicle = useCallback((
@@ -696,8 +716,13 @@ export function useVehicleSystems(
           // Can't move forward - turn around on current tile
           const options = getDirectionOptions(currentGrid, currentGridSize, car.tileX, car.tileY);
           if (options.length > 0) {
-            // Pick any valid direction (preferring not the one we were going)
-            const otherOptions = options.filter(d => d !== car.direction);
+            // Pick any valid direction (preferring not the one we were going) - PERF: Build array in-place
+            const otherOptions: typeof options = [];
+            for (const d of options) {
+              if (d !== car.direction) {
+                otherOptions.push(d);
+              }
+            }
             const newDir = otherOptions.length > 0 
               ? otherOptions[Math.floor(Math.random() * otherOptions.length)]
               : options[Math.floor(Math.random() * options.length)];
