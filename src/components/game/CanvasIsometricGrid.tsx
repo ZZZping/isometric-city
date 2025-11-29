@@ -1723,14 +1723,10 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
   }, []);
   
   // Helper function to check if a building is high density (should render above vehicles)
-  // High density buildings are apartment_high, office_high, and mall
+  // High density buildings follow the pattern: ends with "_high" or equals "mall"
+  // This pattern-based approach is more maintainable than a hardcoded list
   const isHighDensityBuilding = useCallback((buildingType: BuildingType): boolean => {
-    const highDensityTypes: BuildingType[] = [
-      'apartment_high',
-      'office_high',
-      'mall',
-    ];
-    return highDensityTypes.includes(buildingType);
+    return buildingType.endsWith('_high') || buildingType === 'mall';
   }, []);
   
   // Main render function - PERF: Uses requestAnimationFrame throttling to batch multiple state updates
