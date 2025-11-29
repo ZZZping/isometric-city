@@ -451,28 +451,24 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       return !!el?.closest('input, textarea, select, [contenteditable="true"]');
     };
 
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (isTypingTarget(e.target)) return;
-      const key = e.key.toLowerCase();
-      if (['w', 'a', 's', 'd', 'arrowup', 'arrowleft', 'arrowdown', 'arrowright'].includes(key)) {
-        pressed.add(key);
-        e.preventDefault();
+    let animationFrameId: number | null = null;
+    let lastTime = 0;
+
+    const stopLoop = () => {
+      if (animationFrameId !== null) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
       }
     };
 
-    const handleKeyUp = (e: KeyboardEvent) => {
-      const key = e.key.toLowerCase();
-      pressed.delete(key);
-    };
-
-    let animationFrameId = 0;
-    let lastTime = performance.now();
-
     const tick = (time: number) => {
-      animationFrameId = requestAnimationFrame(tick);
+      if (!pressed.size) {
+        stopLoop();
+        return;
+      }
+
       const delta = Math.min((time - lastTime) / 1000, 0.05);
       lastTime = time;
-      if (!pressed.size) return;
 
       let dx = 0;
       let dy = 0;
@@ -483,7 +479,6 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
 
       if (dx !== 0 || dy !== 0) {
         const { zoom: currentZoom, gridSize: n, canvasSize: cs } = worldStateRef.current;
-        // Calculate bounds inline
         const padding = 100;
         const mapLeft = -(n - 1) * TILE_WIDTH / 2;
         const mapRight = (n - 1) * TILE_WIDTH / 2;
@@ -499,16 +494,44 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
           y: Math.max(minOffsetY, Math.min(maxOffsetY, prev.y + dy)),
         }));
       }
+
+      animationFrameId = requestAnimationFrame(tick);
+    };
+
+    const startLoop = () => {
+      if (animationFrameId !== null) return;
+      lastTime = performance.now();
+      animationFrameId = requestAnimationFrame(tick);
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (isTypingTarget(e.target)) return;
+      const key = e.key.toLowerCase();
+      if (['w', 'a', 's', 'd', 'arrowup', 'arrowleft', 'arrowdown', 'arrowright'].includes(key)) {
+        const hadKeys = pressed.size > 0;
+        pressed.add(key);
+        if (!hadKeys) {
+          startLoop();
+        }
+        e.preventDefault();
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      const key = e.key.toLowerCase();
+      pressed.delete(key);
+      if (!pressed.size) {
+        stopLoop();
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
-    animationFrameId = requestAnimationFrame(tick);
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
-      cancelAnimationFrame(animationFrameId);
+      stopLoop();
       pressed.clear();
     };
   }, []);
@@ -1685,36 +1708,57 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
   // Update canvas size on resize with high-DPI support
   useEffect(() => {
     const updateSize = () => {
-      if (containerRef.current && canvasRef.current) {
-        const dpr = window.devicePixelRatio || 1;
-        const rect = containerRef.current.getBoundingClientRect();
-        
-        // Set display size
-        canvasRef.current.style.width = `${rect.width}px`;
-        canvasRef.current.style.height = `${rect.height}px`;
-        if (hoverCanvasRef.current) {
-          hoverCanvasRef.current.style.width = `${rect.width}px`;
-          hoverCanvasRef.current.style.height = `${rect.height}px`;
+      if (!containerRef.current || !canvasRef.current) return;
+      const dpr = window.devicePixelRatio || 1;
+      const rect = containerRef.current.getBoundingClientRect();
+      
+      // Set display size
+      canvasRef.current.style.width = `${rect.width}px`;
+      canvasRef.current.style.height = `${rect.height}px`;
+      if (hoverCanvasRef.current) {
+        hoverCanvasRef.current.style.width = `${rect.width}px`;
+        hoverCanvasRef.current.style.height = `${rect.height}px`;
+      }
+      if (carsCanvasRef.current) {
+        carsCanvasRef.current.style.width = `${rect.width}px`;
+        carsCanvasRef.current.style.height = `${rect.height}px`;
+      }
+      if (lightingCanvasRef.current) {
+        lightingCanvasRef.current.style.width = `${rect.width}px`;
+        lightingCanvasRef.current.style.height = `${rect.height}px`;
+      }
+      
+      // Set actual size in memory (scaled for DPI)
+      const nextWidth = Math.round(rect.width * dpr);
+      const nextHeight = Math.round(rect.height * dpr);
+      setCanvasSize((prev) => {
+        if (prev.width === nextWidth && prev.height === nextHeight) {
+          return prev;
         }
-        if (carsCanvasRef.current) {
-          carsCanvasRef.current.style.width = `${rect.width}px`;
-          carsCanvasRef.current.style.height = `${rect.height}px`;
-        }
-        if (lightingCanvasRef.current) {
-          lightingCanvasRef.current.style.width = `${rect.width}px`;
-          lightingCanvasRef.current.style.height = `${rect.height}px`;
-        }
-        
-        // Set actual size in memory (scaled for DPI)
-        setCanvasSize({
-          width: Math.round(rect.width * dpr),
-          height: Math.round(rect.height * dpr),
-        });
+        return {
+          width: nextWidth,
+          height: nextHeight,
+        };
+      });
+    };
+
+    updateSize();
+
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && containerRef.current) {
+      resizeObserver = new ResizeObserver(() => updateSize());
+      resizeObserver.observe(containerRef.current);
+    } else {
+      window.addEventListener('resize', updateSize);
+    }
+
+    return () => {
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      } else {
+        window.removeEventListener('resize', updateSize);
       }
     };
-    updateSize();
-    window.addEventListener('resize', updateSize);
-    return () => window.removeEventListener('resize', updateSize);
   }, []);
   
   // Main render function - PERF: Uses requestAnimationFrame throttling to batch multiple state updates

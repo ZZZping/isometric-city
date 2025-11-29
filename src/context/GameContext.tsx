@@ -497,6 +497,21 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   
   // Saved cities state for multi-city save system
   const [savedCities, setSavedCities] = useState<SavedCityMeta[]>([]);
+  const [isPageVisible, setIsPageVisible] = useState(true);
+
+  // Track page visibility so we can pause background work when tab is hidden
+  useEffect(() => {
+    if (typeof document === 'undefined') {
+      return;
+    }
+    const handleVisibilityChange = () => {
+      const visible = !document.hidden;
+      setIsPageVisible((prev) => (prev === visible ? prev : visible));
+    };
+    handleVisibilityChange();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
   
   // Load game state and sprite pack from localStorage on mount (client-side only)
   useEffect(() => {
@@ -606,7 +621,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let timer: ReturnType<typeof setInterval> | null = null;
 
-    if (state.speed > 0) {
+    if (state.speed > 0 && isPageVisible) {
       // Check if running on mobile for performance optimization
       const isMobileDevice = typeof window !== 'undefined' && (
         window.innerWidth < 768 || 
@@ -630,7 +645,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         clearInterval(timer);
       }
     };
-  }, [state.speed]);
+  }, [state.speed, isPageVisible]);
 
   const setTool = useCallback((tool: Tool) => {
     setState((prev) => ({ ...prev, selectedTool: tool, activePanel: 'none' }));
