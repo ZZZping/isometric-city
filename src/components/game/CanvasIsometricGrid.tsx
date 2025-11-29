@@ -1717,7 +1717,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     return () => window.removeEventListener('resize', updateSize);
   }, []);
   
-  // Main render function - PERF: Uses requestAnimationFrame throttling to batch multiple state updates
+  // Main render function - Continuous animation loop for smooth vehicle/train animations
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !imagesLoaded) return;
@@ -1725,14 +1725,42 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     
-    // PERF: Cancel any pending render to avoid duplicate work
-    if (renderPendingRef.current !== null) {
-      cancelAnimationFrame(renderPendingRef.current);
-    }
+    let animationFrameId: number;
+    let lastTime = performance.now();
+    let lastRenderTime = 0;
     
-    // PERF: Defer render to next animation frame - batches multiple state updates into one render
-    renderPendingRef.current = requestAnimationFrame(() => {
-      renderPendingRef.current = null;
+    // Target 30fps on mobile (33ms per frame), 60fps on desktop (16ms per frame)
+    const targetFrameTime = isMobile ? 33 : 16;
+    
+    const render = (time: number) => {
+      animationFrameId = requestAnimationFrame(render);
+      
+      // Frame rate limiting for mobile - skip frames to maintain target FPS
+      const timeSinceLastRender = time - lastRenderTime;
+      if (isMobile && timeSinceLastRender < targetFrameTime) {
+        return; // Skip this frame on mobile to reduce CPU load
+      }
+      
+      const delta = Math.min((time - lastTime) / 1000, 0.3);
+      lastTime = time;
+      lastRenderTime = time;
+      
+      // Update all animated elements
+      if (delta > 0) {
+        updateCars(delta);
+        spawnCrimeIncidents(delta);
+        updateCrimeIncidents(delta);
+        updateEmergencyVehicles(delta);
+        updatePedestrians(delta);
+        updateAirplanes(delta);
+        updateHelicopters(delta);
+        updateBoats(delta);
+        updateTrains(delta);
+        updateFireworks(delta, visualHour);
+        updateSmog(delta);
+        navLightFlashTimerRef.current += delta * 3;
+        trafficLightTimerRef.current += delta;
+      }
       
       const dpr = window.devicePixelRatio || 1;
     
@@ -3545,6 +3573,19 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       drawBuilding(ctx, screenX, screenY, tile);
     });
     
+    // Draw ground-level animated elements (vehicles, pedestrians, etc.) after buildings
+    // This ensures tall building sprites properly occlude vehicles behind them
+    const skipAnimatedElements = isMobile && (isPanningRef.current || isPinchZoomingRef.current);
+    if (!skipAnimatedElements) {
+      drawCars(ctx);
+      drawPedestrians(ctx); // Draw pedestrians (zoom-gated)
+      drawBoats(ctx); // Draw boats on water
+      drawTrainsCallback(ctx); // Draw trains on rail network
+      drawSmog(ctx); // Draw factory smog (above ground, below aircraft)
+      drawEmergencyVehicles(ctx); // Draw emergency vehicles
+      drawIncidentIndicators(ctx, 0); // Draw fire/crime incident indicators
+    }
+    
     // Draw overlays last so they remain visible on top of buildings
     overlayQueue.forEach(({ tile, screenX, screenY }) => {
       // Get service coverage for this tile
@@ -3564,6 +3605,13 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       ctx.closePath();
       ctx.fill();
     });
+    
+    // Draw aerial elements (helicopters, airplanes, fireworks) above everything
+    if (!skipAnimatedElements) {
+      drawHelicopters(ctx); // Draw helicopters (below planes, above ground)
+      drawAirplanes(ctx); // Draw airplanes above everything
+      drawFireworks(ctx); // Draw fireworks above everything (nighttime only)
+    }
     
     // Draw water body names (after everything else so they're on top)
     if (waterBodies && waterBodies.length > 0) {
@@ -3602,17 +3650,14 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     }
     
     ctx.restore();
-    }); // End requestAnimationFrame callback
+    }; // End render function
     
-    // PERF: Cleanup - cancel pending render on unmount or deps change
-    return () => {
-      if (renderPendingRef.current !== null) {
-        cancelAnimationFrame(renderPendingRef.current);
-        renderPendingRef.current = null;
-      }
-    };
-  // PERF: hoveredTile and selectedTile removed from deps - now rendered on separate hover canvas layer
-  }, [grid, gridSize, offset, zoom, overlayMode, imagesLoaded, imageLoadVersion, canvasSize, dragStartTile, dragEndTile, state.services, currentSpritePack, waterBodies, getTileMetadata, showsDragGrid]);
+    // Start the animation loop
+    animationFrameId = requestAnimationFrame(render);
+    
+    // Cleanup on unmount
+    return () => cancelAnimationFrame(animationFrameId);
+  }, [grid, gridSize, offset, zoom, overlayMode, imagesLoaded, imageLoadVersion, canvasSize, dragStartTile, dragEndTile, state.services, currentSpritePack, waterBodies, getTileMetadata, showsDragGrid, updateCars, drawCars, spawnCrimeIncidents, updateCrimeIncidents, updateEmergencyVehicles, drawEmergencyVehicles, updatePedestrians, drawPedestrians, updateAirplanes, drawAirplanes, updateHelicopters, drawHelicopters, updateBoats, drawBoats, updateTrains, drawTrainsCallback, drawIncidentIndicators, updateFireworks, drawFireworks, updateSmog, drawSmog, visualHour, isMobile]);
   
   // PERF: Lightweight hover/selection overlay - renders ONLY tile highlights
   // This runs frequently (on mouse move) but is extremely fast since it only draws simple shapes
@@ -3683,73 +3728,17 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     ctx.setTransform(1, 0, 0, 1, 0, 0);
   }, [hoveredTile, selectedTile, offset, zoom, gridSize, grid]);
   
-  // Animate decorative car traffic AND emergency vehicles on top of the base canvas
+  // Cars canvas is now unused - all rendering moved to main canvas for proper z-ordering
+  // Keep the canvas element but clear it to ensure no duplicate rendering
   useEffect(() => {
     const canvas = carsCanvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     
-    ctx.imageSmoothingEnabled = false;
-    
-    let animationFrameId: number;
-    let lastTime = performance.now();
-    let lastRenderTime = 0;
-    
-    // Target 30fps on mobile (33ms per frame), 60fps on desktop (16ms per frame)
-    const targetFrameTime = isMobile ? 33 : 16;
-    
-    const render = (time: number) => {
-      animationFrameId = requestAnimationFrame(render);
-      
-      // Frame rate limiting for mobile - skip frames to maintain target FPS
-      const timeSinceLastRender = time - lastRenderTime;
-      if (isMobile && timeSinceLastRender < targetFrameTime) {
-        return; // Skip this frame on mobile to reduce CPU load
-      }
-      
-      const delta = Math.min((time - lastTime) / 1000, 0.3);
-      lastTime = time;
-      lastRenderTime = time;
-      
-      if (delta > 0) {
-        updateCars(delta);
-        spawnCrimeIncidents(delta); // Spawn new crime incidents
-        updateCrimeIncidents(delta); // Update/decay crime incidents
-        updateEmergencyVehicles(delta); // Update emergency vehicles!
-        updatePedestrians(delta); // Update pedestrians (zoom-gated)
-        updateAirplanes(delta); // Update airplanes (airport required)
-        updateHelicopters(delta); // Update helicopters (hospital/airport required)
-        updateBoats(delta); // Update boats (marina/pier required)
-        updateTrains(delta); // Update trains on rail network
-        updateFireworks(delta, visualHour); // Update fireworks (nighttime only)
-        updateSmog(delta); // Update factory smog particles
-        navLightFlashTimerRef.current += delta * 3; // Update nav light flash timer
-        trafficLightTimerRef.current += delta; // Update traffic light cycle timer
-      }
-      // PERF: Skip drawing animated elements during mobile panning/zooming for better performance
-      const skipAnimatedElements = isMobile && (isPanningRef.current || isPinchZoomingRef.current);
-      if (skipAnimatedElements) {
-        // Clear the canvas but don't draw anything - hides all animated elements while panning/zooming
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-      } else {
-        drawCars(ctx);
-        drawPedestrians(ctx); // Draw pedestrians (zoom-gated)
-        drawBoats(ctx); // Draw boats on water
-        drawTrainsCallback(ctx); // Draw trains on rail network
-        drawSmog(ctx); // Draw factory smog (above ground, below aircraft)
-        drawEmergencyVehicles(ctx); // Draw emergency vehicles!
-        drawIncidentIndicators(ctx, delta); // Draw fire/crime incident indicators!
-        drawHelicopters(ctx); // Draw helicopters (below planes, above ground)
-        drawAirplanes(ctx); // Draw airplanes above everything
-        drawFireworks(ctx); // Draw fireworks above everything (nighttime only)
-      }
-    };
-    
-    animationFrameId = requestAnimationFrame(render);
-    return () => cancelAnimationFrame(animationFrameId);
-  }, [canvasSize.width, canvasSize.height, updateCars, drawCars, spawnCrimeIncidents, updateCrimeIncidents, updateEmergencyVehicles, drawEmergencyVehicles, updatePedestrians, drawPedestrians, updateAirplanes, drawAirplanes, updateHelicopters, drawHelicopters, updateBoats, drawBoats, updateTrains, drawTrainsCallback, drawIncidentIndicators, updateFireworks, drawFireworks, updateSmog, drawSmog, visualHour, isMobile]);
+    // Clear the canvas once
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }, [canvasSize.width, canvasSize.height]);
   
   // Day/Night cycle lighting rendering - optimized for performance
   useEffect(() => {
