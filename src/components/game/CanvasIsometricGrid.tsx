@@ -3561,6 +3561,32 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       return;
     }
     
+    // Competitive quick commands (left-click + modifier)
+    if (state.mode === 'competitive' && selectedTool === 'select' && selectedUnits.length > 0 && e.button === 0) {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (rect) {
+        const mouseX = (e.clientX - rect.left) / zoom;
+        const mouseY = (e.clientY - rect.top) / zoom;
+        const { gridX, gridY } = screenToGrid(mouseX, mouseY, offset.x / zoom, offset.y / zoom);
+        const tx = Math.max(0, Math.min(gridSize - 1, gridX));
+        const ty = Math.max(0, Math.min(gridSize - 1, gridY));
+        const tile = grid[ty]?.[tx];
+        const isEnemyBuilding =
+          tile &&
+          tile.building.type !== 'grass' &&
+          tile.building.type !== 'water' &&
+          tile.ownerId &&
+          tile.ownerId !== state.currentPlayerId;
+        if (e.ctrlKey || e.metaKey) {
+          issueUnitOrder(tx, ty, isEnemyBuilding ? { type: 'building', id: `${tx},${ty}` } : undefined);
+        } else if (e.shiftKey) {
+          issueUnitOrder(tx, ty);
+        }
+        e.preventDefault();
+        return;
+      }
+    }
+    
     if (state.mode === 'competitive' && selectedTool === 'select' && e.button === 0) {
       setUnitSelectStart({ x: e.clientX, y: e.clientY });
       setUnitSelectEnd({ x: e.clientX, y: e.clientY });
