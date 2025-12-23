@@ -3,10 +3,14 @@
 // ============================================================================
 // Handles loading and caching of sprite images with optional background filtering
 
-// Background color to filter from sprite sheets
-const BACKGROUND_COLOR = { r: 255, g: 0, b: 0 };
+type RGB = { r: number; g: number; b: number };
+
+// Background color to filter from sprite sheets (fallback if sampling fails)
+const DEFAULT_BACKGROUND_COLOR: RGB = { r: 255, g: 0, b: 0 };
 // Color distance threshold - pixels within this distance will be made transparent
-const COLOR_THRESHOLD = 155; // Adjust this value to be more/less aggressive
+const COLOR_THRESHOLD = 155;
+// Additional tolerance used only for edge anti-aliasing (kept conservative)
+const EDGE_SOFTENING = 24;
 
 // Image cache for building sprites
 const imageCache = new Map<string, HTMLImageElement>();
@@ -29,6 +33,189 @@ export function onImageLoaded(callback: ImageLoadCallback): () => void {
  */
 function notifyImageLoaded() {
   imageLoadCallbacks.forEach(cb => cb());
+}
+
+function clampByte(n: number): number {
+  if (n <= 0) return 0;
+  if (n >= 255) return 255;
+  return n | 0;
+}
+
+function colorDistanceSq(r: number, g: number, b: number, c: RGB): number {
+  const dr = r - c.r;
+  const dg = g - c.g;
+  const db = b - c.b;
+  return dr * dr + dg * dg + db * db;
+}
+
+function sampleBackgroundColorFromCorners(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number
+): RGB {
+  const block = Math.min(6, width, height);
+  if (block <= 0) return DEFAULT_BACKGROUND_COLOR;
+
+  let rs = 0, gs = 0, bs = 0, n = 0;
+  const corners: Array<[number, number]> = [
+    [0, 0],
+    [Math.max(0, width - block), 0],
+    [0, Math.max(0, height - block)],
+    [Math.max(0, width - block), Math.max(0, height - block)],
+  ];
+
+  for (const [x0, y0] of corners) {
+    for (let y = y0; y < y0 + block; y++) {
+      for (let x = x0; x < x0 + block; x++) {
+        const off = (y * width + x) * 4;
+        rs += data[off];
+        gs += data[off + 1];
+        bs += data[off + 2];
+        n++;
+      }
+    }
+  }
+
+  if (!n) return DEFAULT_BACKGROUND_COLOR;
+  return { r: Math.round(rs / n), g: Math.round(gs / n), b: Math.round(bs / n) };
+}
+
+export type BackgroundFilterOptions = {
+  /**
+   * Background key color. If omitted, it is estimated from the image corners.
+   */
+  backgroundColor?: RGB;
+  /**
+   * Hard distance threshold. Pixels connected to the image edge within this
+   * distance become fully transparent.
+   */
+  threshold?: number;
+  /**
+   * Optional soft edge band (in distance units). Pixels connected to the image
+   * edge within (threshold + softenEdge) are partially transparent to preserve
+   * anti-aliased edges.
+   */
+  softenEdge?: number;
+};
+
+/**
+ * Filters colors close to the background color from an image, making them transparent.
+ * Uses an edge-connected flood fill so we don't remove legitimate interior colors.
+ */
+export function filterBackgroundColorToCanvas(
+  img: HTMLImageElement,
+  options: BackgroundFilterOptions = {}
+): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = img.naturalWidth || img.width;
+  canvas.height = img.naturalHeight || img.height;
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return canvas;
+
+  ctx.drawImage(img, 0, 0);
+
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+  const width = canvas.width;
+  const height = canvas.height;
+
+  const backgroundColor = options.backgroundColor ?? sampleBackgroundColorFromCorners(data, width, height);
+  const threshold = options.threshold ?? COLOR_THRESHOLD;
+  const softenEdge = options.softenEdge ?? EDGE_SOFTENING;
+
+  const hardSq = threshold * threshold;
+  const soft = Math.max(threshold, threshold + softenEdge);
+  const softSq = soft * soft;
+
+  const visited = new Uint8Array(width * height);
+  const stack: number[] = [];
+
+  const trySeed = (x: number, y: number) => {
+    const idx = y * width + x;
+    if (visited[idx]) return;
+    const off = idx * 4;
+    const distSq = colorDistanceSq(data[off], data[off + 1], data[off + 2], backgroundColor);
+    if (distSq <= softSq) {
+      visited[idx] = 1;
+      stack.push(idx);
+    }
+  };
+
+  // Seed from all 4 edges
+  for (let x = 0; x < width; x++) {
+    trySeed(x, 0);
+    if (height > 1) trySeed(x, height - 1);
+  }
+  for (let y = 1; y < height - 1; y++) {
+    trySeed(0, y);
+    if (width > 1) trySeed(width - 1, y);
+  }
+
+  while (stack.length) {
+    const idx = stack.pop()!;
+    const off = idx * 4;
+    const r = data[off];
+    const g = data[off + 1];
+    const b = data[off + 2];
+    const distSq = colorDistanceSq(r, g, b, backgroundColor);
+
+    if (distSq <= hardSq) {
+      data[off + 3] = 0;
+    } else {
+      const dist = Math.sqrt(distSq);
+      const t = (dist - threshold) / Math.max(1, soft - threshold); // 0..1
+      const alpha = clampByte(Math.round(255 * t));
+      if (alpha < data[off + 3]) data[off + 3] = alpha;
+    }
+
+    const x = idx % width;
+    const y = (idx - x) / width;
+
+    if (x > 0) {
+      const n = idx - 1;
+      if (!visited[n]) {
+        const noff = n * 4;
+        if (colorDistanceSq(data[noff], data[noff + 1], data[noff + 2], backgroundColor) <= softSq) {
+          visited[n] = 1;
+          stack.push(n);
+        }
+      }
+    }
+    if (x + 1 < width) {
+      const n = idx + 1;
+      if (!visited[n]) {
+        const noff = n * 4;
+        if (colorDistanceSq(data[noff], data[noff + 1], data[noff + 2], backgroundColor) <= softSq) {
+          visited[n] = 1;
+          stack.push(n);
+        }
+      }
+    }
+    if (y > 0) {
+      const n = idx - width;
+      if (!visited[n]) {
+        const noff = n * 4;
+        if (colorDistanceSq(data[noff], data[noff + 1], data[noff + 2], backgroundColor) <= softSq) {
+          visited[n] = 1;
+          stack.push(n);
+        }
+      }
+    }
+    if (y + 1 < height) {
+      const n = idx + width;
+      if (!visited[n]) {
+        const noff = n * 4;
+        if (colorDistanceSq(data[noff], data[noff + 1], data[noff + 2], backgroundColor) <= softSq) {
+          visited[n] = 1;
+          stack.push(n);
+        }
+      }
+    }
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+  return canvas;
 }
 
 /**
@@ -62,68 +249,13 @@ export function loadImage(src: string): Promise<HTMLImageElement> {
 export function filterBackgroundColor(img: HTMLImageElement, threshold: number = COLOR_THRESHOLD): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     try {
-      console.log('Starting background color filtering...', { 
-        imageSize: `${img.naturalWidth || img.width}x${img.naturalHeight || img.height}`,
-        threshold,
-        backgroundColor: BACKGROUND_COLOR
-      });
-      
-      const canvas = document.createElement('canvas');
-      canvas.width = img.naturalWidth || img.width;
-      canvas.height = img.naturalHeight || img.height;
-      
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        reject(new Error('Could not get canvas context'));
-        return;
-      }
-      
-      // Draw the original image to the canvas
-      ctx.drawImage(img, 0, 0);
-      
-      // Get image data
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const data = imageData.data;
-      
-      console.log(`Processing ${data.length / 4} pixels...`);
-      
-      // Process each pixel
-      let filteredCount = 0;
-      for (let i = 0; i < data.length; i += 4) {
-        const r = data[i];
-        const g = data[i + 1];
-        const b = data[i + 2];
-        
-        // Calculate color distance using Euclidean distance in RGB space
-        const distance = Math.sqrt(
-          Math.pow(r - BACKGROUND_COLOR.r, 2) +
-          Math.pow(g - BACKGROUND_COLOR.g, 2) +
-          Math.pow(b - BACKGROUND_COLOR.b, 2)
-        );
-        
-        // If the color is close to the background color, make it transparent
-        if (distance <= threshold) {
-          data[i + 3] = 0; // Set alpha to 0 (transparent)
-          filteredCount++;
-        }
-      }
-      
-      // Debug: log filtering results
-      const totalPixels = data.length / 4;
-      const percentage = filteredCount > 0 ? ((filteredCount / totalPixels) * 100).toFixed(2) : '0.00';
-      console.log(`Filtered ${filteredCount} pixels (${percentage}%) from sprite sheet`);
-      
-      // Put the modified image data back
-      ctx.putImageData(imageData, 0, 0);
-      
-      // Create a new image from the processed canvas
+      const canvas = filterBackgroundColorToCanvas(img, { threshold });
+
       const filteredImg = new Image();
       filteredImg.onload = () => {
-        console.log('Filtered image created successfully');
         resolve(filteredImg);
       };
       filteredImg.onerror = (error) => {
-        console.error('Failed to create filtered image:', error);
         reject(new Error('Failed to create filtered image'));
       };
       filteredImg.src = canvas.toDataURL();

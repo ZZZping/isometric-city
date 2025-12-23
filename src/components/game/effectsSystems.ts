@@ -185,7 +185,11 @@ export function useEffectsSystems(
     // Update existing fireworks
     const updatedFireworks: Firework[] = [];
     
-    for (const firework of fireworksRef.current) {
+    for (const firework0 of fireworksRef.current) {
+      const firework: Firework = {
+        ...firework0,
+        particles: firework0.particles.map(p => ({ ...p, trail: [...p.trail] })),
+      };
       firework.age += delta;
       
       switch (firework.state) {
@@ -444,33 +448,34 @@ export function useEffectsSystems(
       });
     }
     
-    // Update each factory's smog
-    for (const smog of factorySmogRef.current) {
+    // Update each factory's smog (avoid in-place mutation for React compiler lint)
+    factorySmogRef.current = factorySmogRef.current.map((smog0) => {
       // Update spawn timer with mobile multiplier
-      const baseSpawnInterval = smog.buildingType === 'factory_large' 
-        ? SMOG_SPAWN_INTERVAL_LARGE 
+      const baseSpawnInterval = smog0.buildingType === 'factory_large'
+        ? SMOG_SPAWN_INTERVAL_LARGE
         : SMOG_SPAWN_INTERVAL_MEDIUM;
       const spawnInterval = baseSpawnInterval * spawnMultiplier;
-      
-      smog.spawnTimer += adjustedDelta;
-      
+
+      let spawnTimer = smog0.spawnTimer + adjustedDelta;
+      const particles = [...smog0.particles];
+
       // Spawn new particles (only if below particle limit)
-      while (smog.spawnTimer >= spawnInterval && smog.particles.length < maxParticles) {
-        smog.spawnTimer -= spawnInterval;
-        
+      while (spawnTimer >= spawnInterval && particles.length < maxParticles) {
+        spawnTimer -= spawnInterval;
+
         // Calculate spawn position with some randomness around the chimney
-        const spawnX = smog.screenX + (Math.random() - 0.5) * 8;
-        const spawnY = smog.screenY + (Math.random() - 0.5) * 4;
-        
+        const spawnX = smog0.screenX + (Math.random() - 0.5) * 8;
+        const spawnY = smog0.screenY + (Math.random() - 0.5) * 4;
+
         // Random initial velocity with upward and slight horizontal drift
         const vx = (Math.random() - 0.5) * SMOG_DRIFT_SPEED * 2;
         const vy = -SMOG_RISE_SPEED * (0.8 + Math.random() * 0.4);
-        
+
         // Random particle properties
         const size = SMOG_PARTICLE_SIZE_MIN + Math.random() * (SMOG_PARTICLE_SIZE_MAX - SMOG_PARTICLE_SIZE_MIN);
         const maxAge = particleMaxAge * (0.7 + Math.random() * 0.6);
-        
-        smog.particles.push({
+
+        particles.push({
           x: spawnX,
           y: spawnY,
           vx,
@@ -481,36 +486,36 @@ export function useEffectsSystems(
           opacity: SMOG_BASE_OPACITY * (0.8 + Math.random() * 0.4),
         });
       }
-      
+
       // Reset spawn timer if we hit the particle limit to prevent buildup
-      if (smog.particles.length >= maxParticles) {
-        smog.spawnTimer = 0;
+      if (particles.length >= maxParticles) {
+        spawnTimer = 0;
       }
-      
-      // Update existing particles
-      smog.particles = smog.particles.filter(particle => {
-        particle.age += adjustedDelta;
-        
-        if (particle.age >= particle.maxAge) {
-          return false; // Remove old particles
-        }
-        
-        // Update position with drift
-        particle.x += particle.vx * adjustedDelta;
-        particle.y += particle.vy * adjustedDelta;
-        
-        // Slow down horizontal drift over time
-        particle.vx *= 0.995;
-        
-        // Slow down vertical rise as particle ages
-        particle.vy *= 0.998;
-        
-        // Grow particle size over time
-        particle.size += SMOG_PARTICLE_GROWTH * adjustedDelta;
-        
-        return true;
+
+      // Update existing particles without mutating originals
+      const updatedParticles = particles.flatMap((p0) => {
+        const age = p0.age + adjustedDelta;
+        if (age >= p0.maxAge) return [];
+
+        const vx = p0.vx * 0.995;
+        const vy = p0.vy * 0.998;
+        return [{
+          ...p0,
+          age,
+          x: p0.x + p0.vx * adjustedDelta,
+          y: p0.y + p0.vy * adjustedDelta,
+          vx,
+          vy,
+          size: p0.size + SMOG_PARTICLE_GROWTH * adjustedDelta,
+        }];
       });
-    }
+
+      return {
+        ...smog0,
+        spawnTimer,
+        particles: updatedParticles,
+      };
+    });
   }, [worldStateRef, gridVersionRef, factorySmogRef, smogLastGridVersionRef, findSmogFactoriesCallback, isMobile]);
 
   // Draw smog particles
