@@ -173,12 +173,14 @@ export function useAircraftSystems(
         // Landing direction is OPPOSITE to takeoff direction
         const landingAngle = airport.runwayAngle + Math.PI;
         
-        // Spawn the plane far away, coming from the direction it will land
-        // (spawn in the direction of landing approach, so plane flies toward runway)
-        const approachDistance = currentGridSize * TILE_WIDTH * 0.6; // Approach from some distance
-        // Spawn position: offset from runway threshold in the direction planes approach FROM
-        const startX = airport.runwayEndX - Math.cos(landingAngle) * approachDistance;
-        const startY = airport.runwayEndY - Math.sin(landingAngle) * approachDistance;
+        // Spawn the plane at moderate distance, coming from the direction it will land
+        // Use a reasonable fixed distance (about 8-12 tiles away)
+        const approachDistance = TILE_WIDTH * 10; // About 640 pixels
+        
+        // Spawn position: offset from runway END in the OPPOSITE of landing direction
+        // (i.e., in the takeoff direction from runwayEnd, so plane flies back toward runway)
+        const startX = airport.runwayEndX + Math.cos(airport.runwayAngle) * approachDistance;
+        const startY = airport.runwayEndY + Math.sin(airport.runwayAngle) * approachDistance;
         
         airplanesRef.current.push({
           id: airplaneIdRef.current++,

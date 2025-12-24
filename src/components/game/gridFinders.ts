@@ -303,12 +303,13 @@ export function findAirports(
         // - Not flipped: runway points NE (toward top-right of screen)
         // - Flipped: runway points NW (toward top-left of screen)
         
-        // Calculate screen coordinates for the airport origin
-        const { screenX: originX, screenY: originY } = gridToScreen(x, y, 0, 0);
-        
-        // Airport is 4x4 tiles, center is at offset (2, 2) in tiles
-        const centerX = originX + TILE_WIDTH * 2;
-        const centerY = originY + TILE_HEIGHT * 2;
+        // Calculate screen coordinates for the airport center
+        // Airport is 4x4 tiles, so center is at grid offset (2, 2) from origin
+        // Using gridToScreen directly for accuracy
+        const { screenX: centerX, screenY: centerY } = gridToScreen(x + 2, y + 2, 0, 0);
+        // Add half-tile offset to get actual center of the tile
+        const airportCenterX = centerX + TILE_WIDTH / 2;
+        const airportCenterY = centerY + TILE_HEIGHT / 2;
         
         // Runway direction angles in screen space
         // NE direction: -PI/4 (up-right) - this is the default (not flipped)
@@ -317,22 +318,22 @@ export function findAirports(
         const runwayAngle = flipped ? (-3 * Math.PI / 4) : (-Math.PI / 4);
         
         // Runway extends from near the bottom of the tile to near the top
-        // In screen space, the runway is about 3 tiles long
+        // In screen space, the runway is about 2.5 tiles long
         const runwayLength = TILE_WIDTH * 2.5;
         
         // Start is at the threshold (back of runway - where takeoffs start)
         // End is at the departure end (front of runway - where takeoffs end)
-        const runwayStartX = centerX - Math.cos(runwayAngle) * runwayLength * 0.4;
-        const runwayStartY = centerY - Math.sin(runwayAngle) * runwayLength * 0.4;
-        const runwayEndX = centerX + Math.cos(runwayAngle) * runwayLength * 0.6;
-        const runwayEndY = centerY + Math.sin(runwayAngle) * runwayLength * 0.6;
+        const runwayStartX = airportCenterX - Math.cos(runwayAngle) * runwayLength * 0.4;
+        const runwayStartY = airportCenterY - Math.sin(runwayAngle) * runwayLength * 0.4;
+        const runwayEndX = airportCenterX + Math.cos(runwayAngle) * runwayLength * 0.6;
+        const runwayEndY = airportCenterY + Math.sin(runwayAngle) * runwayLength * 0.6;
         
         // Terminal is on the opposite side of the runway from the centerline
         // Offset perpendicular to runway direction
         const perpAngle = runwayAngle + Math.PI / 2;
         const terminalOffset = TILE_WIDTH * 0.8;
-        const terminalX = centerX + Math.cos(perpAngle) * terminalOffset;
-        const terminalY = centerY + Math.sin(perpAngle) * terminalOffset;
+        const terminalX = airportCenterX + Math.cos(perpAngle) * terminalOffset;
+        const terminalY = airportCenterY + Math.sin(perpAngle) * terminalOffset;
         
         airports.push({
           x,
