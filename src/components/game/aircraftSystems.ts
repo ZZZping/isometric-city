@@ -42,6 +42,64 @@ import {
 } from './constants';
 import { gridToScreen } from './utils';
 import { findAirports, findHeliports } from './gridFinders';
+import { getRoadAdjacency, getBuildingSize, requiresWaterAdjacency } from '@/lib/simulation';
+
+/**
+ * Calculate the runway angle for a specific airport, accounting for building flip state
+ * Mirrors the logic in CanvasIsometricGrid.tsx for building rendering
+ */
+function getAirportRunwayAngle(
+  grid: { building: { type: string; flipped?: boolean } }[][],
+  airportX: number,
+  airportY: number,
+  gridSize: number
+): number {
+  // Base runway angle (NE direction, toward top-right of screen)
+  const baseRunwayAngle = RUNWAY_ANGLE;
+  
+  // Get building size for airport (3x3)
+  const buildingSize = getBuildingSize('airport');
+  
+  // Check if this is a waterfront asset (airports are not)
+  const isWaterfrontAsset = requiresWaterAdjacency('airport');
+  
+  // Determine flip based on road adjacency (same logic as CanvasIsometricGrid.tsx)
+  const shouldRoadMirror = (() => {
+    if (isWaterfrontAsset) return false;
+    
+    const roadCheck = getRoadAdjacency(
+      grid as any, // Type cast since we only need building.type
+      airportX,
+      airportY,
+      buildingSize.width,
+      buildingSize.height,
+      gridSize
+    );
+    if (roadCheck.hasRoad) {
+      return roadCheck.shouldFlip;
+    }
+    
+    // No road adjacent - fall back to deterministic random mirroring
+    const mirrorSeed = (airportX * 47 + airportY * 83) % 100;
+    return mirrorSeed < 50;
+  })();
+  
+  // Airport is not in defaultMirroredBuildings, so isDefaultMirrored = false
+  const isDefaultMirrored = false;
+  const buildingFlipped = grid[airportY]?.[airportX]?.building?.flipped === true;
+  const baseFlipped = isDefaultMirrored ? !buildingFlipped : buildingFlipped;
+  
+  // Final flip: XOR of base flip and road mirror
+  const isFlipped = baseFlipped !== shouldRoadMirror;
+  
+  if (isFlipped) {
+    // Flip the runway angle horizontally (mirror around Y-axis in screen space)
+    // This transforms angle θ to (π - θ)
+    return Math.PI - baseRunwayAngle;
+  }
+  
+  return baseRunwayAngle;
+}
 
 export interface AircraftSystemRefs {
   airplanesRef: React.MutableRefObject<Airplane[]>;
@@ -138,9 +196,9 @@ export function useAircraftSystems(
       const airportCenterY = airportScreenY + TILE_HEIGHT * 1.5;
       
       // Calculate runway positions
-      // Runway runs from SW to NE through the airport center
-      // Takeoff direction is toward NE (top-right of screen)
-      const runwayAngle = RUNWAY_ANGLE;
+      // Runway runs from SW to NE through the airport center (or mirrored if airport is flipped)
+      // Takeoff direction is toward NE (top-right of screen), or NW if mirrored
+      const runwayAngle = getAirportRunwayAngle(currentGrid, airport.x, airport.y, currentGridSize);
       const runwayStartX = airportCenterX - Math.cos(runwayAngle) * RUNWAY_LENGTH * 0.5;
       const runwayStartY = airportCenterY - Math.sin(runwayAngle) * RUNWAY_LENGTH * 0.5;
       const runwayEndX = airportCenterX + Math.cos(runwayAngle) * RUNWAY_LENGTH * 0.5;
