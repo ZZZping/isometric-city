@@ -323,6 +323,20 @@ export default function HomePage() {
             Load Example
           </Button>
         </div>
+
+        <Button
+          asChild
+          variant="ghost"
+          className="mt-3 w-full max-w-xs h-auto px-0 py-1 text-sm font-light tracking-wide text-white/50 hover:text-white/80 hover:bg-transparent hover:underline underline-offset-4"
+        >
+          <a
+            href="https://github.com/amilich/isometric-city"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Open GitHub
+          </a>
+        </Button>
         
         {/* Saved Cities */}
         {savedCities.length > 0 && (
@@ -372,6 +386,19 @@ export default function HomePage() {
               className="w-64 py-8 text-2xl font-light tracking-wide bg-white/5 hover:bg-white/15 text-white/60 hover:text-white border border-white/15 rounded-none transition-all duration-300"
             >
               Load Example
+            </Button>
+            <Button
+              asChild
+              variant="ghost"
+              className="w-64 h-auto px-0 py-1 text-sm font-light tracking-wide text-white/50 hover:text-white/80 hover:bg-transparent hover:underline underline-offset-4"
+            >
+              <a
+                href="https://github.com/amilich/isometric-city"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Open GitHub
+              </a>
             </Button>
           </div>
           
