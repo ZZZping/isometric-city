@@ -322,6 +322,14 @@ export default function HomePage() {
           >
             Load Example
           </Button>
+          <a
+            href="https://github.com/amilich/isometric-city"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-center text-sm text-white/40 hover:text-white/70 transition-colors duration-200 mt-2"
+          >
+            Open GitHub
+          </a>
         </div>
         
         {/* Saved Cities */}
@@ -373,6 +381,14 @@ export default function HomePage() {
             >
               Load Example
             </Button>
+            <a
+              href="https://github.com/amilich/isometric-city"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-center text-sm text-white/40 hover:text-white/70 transition-colors duration-200 mt-2"
+            >
+              Open GitHub
+            </a>
           </div>
           
           {/* Saved Cities */}
