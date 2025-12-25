@@ -277,12 +277,14 @@ export function useAircraftSystems(
       if (isTakingOff) {
         // Start at the terminal/apron, then taxi to runway and take off along runway heading.
         const planeType = PLANE_TYPES[Math.floor(Math.random() * PLANE_TYPES.length)] as PlaneType;
+        const taxiStartAngle = clampAngle(Math.atan2(runway.taxiAimY - runway.gateY, runway.taxiAimX - runway.gateX));
         airplanesRef.current.push({
           id: airplaneIdRef.current++,
           x: runway.gateX,
           y: runway.gateY,
-          angle: clampAngle(runway.runwayDir + Math.PI), // facing "away" while pushing back/taxiing
-          targetAngle: runway.runwayDir,
+          // Face the taxi aim point immediately to avoid drifting outside before turning.
+          angle: taxiStartAngle,
+          targetAngle: taxiStartAngle,
           state: 'taxi_to_runway',
           speed: AIRPLANE_TAXI_SPEED,
           altitude: 0,
@@ -407,8 +409,15 @@ export function useAircraftSystems(
           const targetY = plane.targetY ?? runway.taxiAimY;
 
           const desiredAngle = Math.atan2(targetY - plane.y, targetX - plane.x);
-          plane.angle = turnToward(plane.angle, desiredAngle, AIRPLANE_TAXI_TURN_RATE, delta);
-          plane.speed = AIRPLANE_TAXI_SPEED;
+          const headingError = Math.abs(angleDiff(desiredAngle, plane.angle));
+
+          // "Turn-first" taxi: if we're not aligned, slow down (or pivot in place) so we don't overshoot.
+          const pivotInPlace = headingError > 1.25; // ~72°
+          const alignment = Math.max(0, 1 - headingError / 1.25); // 1..0
+          const taxiSpeed = pivotInPlace ? 0 : Math.max(6, AIRPLANE_TAXI_SPEED * (0.25 + 0.75 * alignment));
+
+          plane.angle = turnToward(plane.angle, desiredAngle, AIRPLANE_TAXI_TURN_RATE * 1.35, delta);
+          plane.speed = taxiSpeed;
           plane.altitude = 0;
 
           plane.x += Math.cos(plane.angle) * plane.speed * delta * speedMultiplier;
@@ -608,9 +617,14 @@ export function useAircraftSystems(
           const targetY = plane.targetY ?? runway.gateY;
 
           const desiredAngle = Math.atan2(targetY - plane.y, targetX - plane.x);
-          plane.angle = turnToward(plane.angle, desiredAngle, AIRPLANE_TAXI_TURN_RATE, delta);
+          const headingError = Math.abs(angleDiff(desiredAngle, plane.angle));
+          const pivotInPlace = headingError > 1.25;
+          const alignment = Math.max(0, 1 - headingError / 1.25);
+          const taxiSpeed = pivotInPlace ? 0 : Math.max(6, AIRPLANE_TAXI_SPEED * (0.25 + 0.75 * alignment));
+
+          plane.angle = turnToward(plane.angle, desiredAngle, AIRPLANE_TAXI_TURN_RATE * 1.35, delta);
           plane.altitude = 0;
-          plane.speed = AIRPLANE_TAXI_SPEED;
+          plane.speed = taxiSpeed;
 
           plane.x += Math.cos(plane.angle) * plane.speed * delta * speedMultiplier;
           plane.y += Math.sin(plane.angle) * plane.speed * delta * speedMultiplier;
