@@ -25,8 +25,8 @@ import {
   AIRPLANE_BRAKE_DECEL,
   AIRPORT_RUNWAY_BASE_HEADING,
   AIRPORT_RUNWAY_LENGTH,
-  AIRPORT_RUNWAY_LATERAL_OFFSET_X,
-  AIRPORT_RUNWAY_LATERAL_OFFSET_Y,
+  AIRPORT_RUNWAY_OFFSET_ALONG,
+  AIRPORT_RUNWAY_OFFSET_PERP,
   AIRPORT_RUNWAY_APPROACH_DISTANCE,
   AIRPORT_GROUND_MAX_RADIUS,
   GROUND_TRAIL_MAX_AGE,
@@ -147,12 +147,18 @@ export function useAircraftSystems(
       const isFlipped = computeAirportIsFlipped(airportX, airportY);
       const runwayDir = isFlipped ? Math.PI - AIRPORT_RUNWAY_BASE_HEADING : AIRPORT_RUNWAY_BASE_HEADING;
 
-      // Runway is laterally offset from the gate (left in unflipped, right when flipped).
-      const runwayCenterX = gateX + (isFlipped ? 1 : -1) * AIRPORT_RUNWAY_LATERAL_OFFSET_X;
-      const runwayCenterY = gateY + AIRPORT_RUNWAY_LATERAL_OFFSET_Y;
-
+      // Runway is offset from the gate in a runway-aligned coordinate frame.
+      // Using perp/along offsets ensures mirrored airports stay correct.
       const ux = Math.cos(runwayDir);
       const uy = Math.sin(runwayDir);
+      const px = Math.cos(runwayDir - Math.PI / 2);
+      const py = Math.sin(runwayDir - Math.PI / 2);
+
+      // In the unflipped sprite the runway sits on the "negative perp" side; flipping swaps sides.
+      const perpSign = isFlipped ? 1 : -1;
+      const runwayCenterX = gateX + ux * AIRPORT_RUNWAY_OFFSET_ALONG + px * AIRPORT_RUNWAY_OFFSET_PERP * perpSign;
+      const runwayCenterY = gateY + uy * AIRPORT_RUNWAY_OFFSET_ALONG + py * AIRPORT_RUNWAY_OFFSET_PERP * perpSign;
+
       const halfLen = AIRPORT_RUNWAY_LENGTH * 0.5;
 
       const startX = runwayCenterX - ux * halfLen;

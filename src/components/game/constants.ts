@@ -91,8 +91,11 @@ export const AIRPLANE_BRAKE_DECEL = 55; // px/sec^2 on rollout
 export const AIRPORT_RUNWAY_BASE_HEADING = -Math.PI / 4; // toward top-right in screen coords
 // Keep runway endpoints inside the airport footprint so taxi doesn't leave the asset.
 export const AIRPORT_RUNWAY_LENGTH = 190; // px (screen space)
-export const AIRPORT_RUNWAY_LATERAL_OFFSET_X = 78; // px (runway is to the "left" of the terminal in the unflipped asset)
-export const AIRPORT_RUNWAY_LATERAL_OFFSET_Y = 18;  // px (runway sits slightly "forward" vs the terminal apron)
+// Runway center offset in a runway-aligned coordinate frame:
+// - "along" is along the runway direction (positive toward runwayDir)
+// - "perp" is perpendicular (positive is dir - 90°)
+export const AIRPORT_RUNWAY_OFFSET_ALONG = 10;
+export const AIRPORT_RUNWAY_OFFSET_PERP = 74; // runway is offset to one side of the terminal/apron
 export const AIRPORT_RUNWAY_APPROACH_DISTANCE = 520; // px back from touchdown
 
 // Clamp how far ground operations can stray from the gate point (screen-space radius).
