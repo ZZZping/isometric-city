@@ -89,6 +89,7 @@ export type Airplane = {
   rolloutEndX?: number;
   rolloutEndY?: number;
   runwayDir?: number; // radians, direction of rollout/takeoff along runway
+  taxiStage?: 0 | 1; // ground taxi waypoint stage (0 = turn point, 1 = hold-short/lineup)
 };
 
 // Seaplane types for bay/water operations

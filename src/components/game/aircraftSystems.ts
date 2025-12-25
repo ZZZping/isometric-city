@@ -175,6 +175,17 @@ export function useAircraftSystems(
       const taxiAimY = runwayCenterY - uy * (AIRPORT_RUNWAY_LENGTH * 0.42);
       const clampedTaxi = clampToGateRadius(taxiAimX, taxiAimY);
 
+      // Add a short "turn point" near the gate so planes start turning early instead of
+      // doing a long straight taxi before lining up.
+      const gateToRunwayDx = runwayCenterX - gateX;
+      const gateToRunwayDy = runwayCenterY - gateY;
+      const gateToRunwayD = Math.hypot(gateToRunwayDx, gateToRunwayDy) || 1;
+      const lateralNx = gateToRunwayDx / gateToRunwayD;
+      const lateralNy = gateToRunwayDy / gateToRunwayD;
+      const taxiTurnX = gateX + lateralNx * 58;
+      const taxiTurnY = gateY + lateralNy * 58;
+      const clampedTurn = clampToGateRadius(taxiTurnX, taxiTurnY);
+
       return {
         gateX,
         gateY,
@@ -187,6 +198,8 @@ export function useAircraftSystems(
         runwayCenterY,
         taxiAimX: clampedTaxi.x,
         taxiAimY: clampedTaxi.y,
+        taxiTurnX: clampedTurn.x,
+        taxiTurnY: clampedTurn.y,
         clampToGateRadius,
       };
     };
@@ -277,7 +290,7 @@ export function useAircraftSystems(
       if (isTakingOff) {
         // Start at the terminal/apron, then taxi to runway and take off along runway heading.
         const planeType = PLANE_TYPES[Math.floor(Math.random() * PLANE_TYPES.length)] as PlaneType;
-        const taxiStartAngle = clampAngle(Math.atan2(runway.taxiAimY - runway.gateY, runway.taxiAimX - runway.gateX));
+        const taxiStartAngle = clampAngle(Math.atan2(runway.taxiTurnY - runway.gateY, runway.taxiTurnX - runway.gateX));
         airplanesRef.current.push({
           id: airplaneIdRef.current++,
           x: runway.gateX,
@@ -297,8 +310,9 @@ export function useAircraftSystems(
           lifeTime: 28 + Math.random() * 22, // 28-50 seconds of activity
           color: AIRPLANE_COLORS[Math.floor(Math.random() * AIRPLANE_COLORS.length)],
           planeType: planeType,
-          targetX: runway.taxiAimX,
-          targetY: runway.taxiAimY,
+          taxiStage: 0,
+          targetX: runway.taxiTurnX,
+          targetY: runway.taxiTurnY,
         });
       } else {
         // Arriving from the edge of the map
@@ -405,8 +419,13 @@ export function useAircraftSystems(
       switch (plane.state) {
         case 'taxi_to_runway': {
           const runway = getAirportRunway(plane.airportX, plane.airportY);
-          const targetX = plane.targetX ?? runway.taxiAimX;
-          const targetY = plane.targetY ?? runway.taxiAimY;
+          const stage = plane.taxiStage ?? 0;
+          const targetX =
+            plane.targetX ??
+            (stage === 0 ? runway.taxiTurnX : runway.taxiAimX);
+          const targetY =
+            plane.targetY ??
+            (stage === 0 ? runway.taxiTurnY : runway.taxiAimY);
 
           const desiredAngle = Math.atan2(targetY - plane.y, targetX - plane.x);
           const headingError = Math.abs(angleDiff(desiredAngle, plane.angle));
@@ -430,12 +449,18 @@ export function useAircraftSystems(
           plane.y = clampedPos.y;
 
           const dist = Math.hypot(targetX - plane.x, targetY - plane.y);
-          if (dist < 22) {
+          if (dist < 18 && (plane.taxiStage ?? 0) === 0) {
+            // Advance to hold-short/lineup point (short segment).
+            plane.taxiStage = 1;
+            plane.targetX = runway.taxiAimX;
+            plane.targetY = runway.taxiAimY;
+          } else if (dist < 20 && (plane.taxiStage ?? 0) === 1) {
             plane.state = 'takeoff_roll';
             plane.runwayDir = runway.runwayDir;
             plane.angle = turnToward(plane.angle, runway.runwayDir, AIRPLANE_TAXI_TURN_RATE * 1.2, delta);
             plane.speed = AIRPLANE_TAKEOFF_ROLL_SPEED_START;
             plane.stateProgress = 0;
+            plane.taxiStage = undefined;
           }
           break;
         }
