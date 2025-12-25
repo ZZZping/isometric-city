@@ -154,8 +154,9 @@ export function useAircraftSystems(
       const px = Math.cos(runwayDir - Math.PI / 2);
       const py = Math.sin(runwayDir - Math.PI / 2);
 
-      // In the unflipped sprite the runway sits on the "negative perp" side; flipping swaps sides.
-      const perpSign = isFlipped ? 1 : -1;
+      // In the unflipped sprite the runway sits on the "positive perp" side in this runway-frame.
+      // Flipping swaps sides.
+      const perpSign = isFlipped ? -1 : 1;
       const runwayCenterX = gateX + ux * AIRPORT_RUNWAY_OFFSET_ALONG + px * AIRPORT_RUNWAY_OFFSET_PERP * perpSign;
       const runwayCenterY = gateY + uy * AIRPORT_RUNWAY_OFFSET_ALONG + py * AIRPORT_RUNWAY_OFFSET_PERP * perpSign;
 

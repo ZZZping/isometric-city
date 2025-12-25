@@ -94,8 +94,10 @@ export const AIRPORT_RUNWAY_LENGTH = 190; // px (screen space)
 // Runway center offset in a runway-aligned coordinate frame:
 // - "along" is along the runway direction (positive toward runwayDir)
 // - "perp" is perpendicular (positive is dir - 90°)
-export const AIRPORT_RUNWAY_OFFSET_ALONG = 10;
-export const AIRPORT_RUNWAY_OFFSET_PERP = 74; // runway is offset to one side of the terminal/apron
+// These are calibrated to match the previously-good screen-space offset
+// (unmirrored: gate + (-78px, +18px) in screen coords).
+export const AIRPORT_RUNWAY_OFFSET_ALONG = -68;
+export const AIRPORT_RUNWAY_OFFSET_PERP = 42; // runway is offset to one side of the terminal/apron
 export const AIRPORT_RUNWAY_APPROACH_DISTANCE = 520; // px back from touchdown
 
 // Clamp how far ground operations can stray from the gate point (screen-space radius).
