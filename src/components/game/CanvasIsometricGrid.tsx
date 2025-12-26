@@ -129,6 +129,12 @@ import {
   TRAINS_PER_RAIL_TILES,
 } from '@/components/game/trainSystem';
 import { Train } from '@/components/game/types';
+import {
+  getMapBounds,
+  clampOffset as clampOffsetUtil,
+  getTouchDistance,
+  getTouchCenter,
+} from '@/components/game/cameraUtils';
 
 // Props interface for CanvasIsometricGrid
 export interface CanvasIsometricGridProps {
@@ -4025,33 +4031,11 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     }
   }, [offset, gridSize, selectedTool, placeAtTile, zoom, showsDragGrid, supportsDragPlace, setSelectedTile, findBuildingOrigin, grid]);
   
-  // Calculate camera bounds based on grid size
-  const getMapBounds = useCallback((currentZoom: number, canvasW: number, canvasH: number) => {
-    const n = gridSize;
-    const padding = 100; // Allow some over-scroll
-    
-    // Map bounds in world coordinates
-    const mapLeft = -(n - 1) * TILE_WIDTH / 2;
-    const mapRight = (n - 1) * TILE_WIDTH / 2;
-    const mapTop = 0;
-    const mapBottom = (n - 1) * TILE_HEIGHT;
-    
-    const minOffsetX = padding - mapRight * currentZoom;
-    const maxOffsetX = canvasW - padding - mapLeft * currentZoom;
-    const minOffsetY = padding - mapBottom * currentZoom;
-    const maxOffsetY = canvasH - padding - mapTop * currentZoom;
-    
-    return { minOffsetX, maxOffsetX, minOffsetY, maxOffsetY };
-  }, [gridSize]);
-  
   // Clamp offset to keep camera within reasonable bounds
+  // Uses extracted utility function from cameraUtils.ts
   const clampOffset = useCallback((newOffset: { x: number; y: number }, currentZoom: number) => {
-    const bounds = getMapBounds(currentZoom, canvasSize.width, canvasSize.height);
-    return {
-      x: Math.max(bounds.minOffsetX, Math.min(bounds.maxOffsetX, newOffset.x)),
-      y: Math.max(bounds.minOffsetY, Math.min(bounds.maxOffsetY, newOffset.y)),
-    };
-  }, [getMapBounds, canvasSize.width, canvasSize.height]);
+    return clampOffsetUtil(newOffset, gridSize, currentZoom, canvasSize.width, canvasSize.height);
+  }, [gridSize, canvasSize.width, canvasSize.height]);
 
   // Handle minimap navigation - center the view on the target tile
   useEffect(() => {
@@ -4070,7 +4054,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     };
     
     // Clamp and set the new offset - this is a legitimate use case for responding to navigation requests
-    const bounds = getMapBounds(zoom, canvasSize.width, canvasSize.height);
+    const bounds = getMapBounds(gridSize, zoom, canvasSize.width, canvasSize.height);
     setOffset({ // eslint-disable-line
       x: Math.max(bounds.minOffsetX, Math.min(bounds.maxOffsetX, newOffset.x)),
       y: Math.max(bounds.minOffsetY, Math.min(bounds.maxOffsetY, newOffset.y)),
@@ -4078,7 +4062,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     
     // Signal that navigation is complete
     onNavigationComplete?.();
-  }, [navigationTarget, zoom, canvasSize.width, canvasSize.height, getMapBounds, onNavigationComplete]);
+  }, [navigationTarget, zoom, canvasSize.width, canvasSize.height, gridSize, onNavigationComplete]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (!isPanning && panCandidateRef.current) {
@@ -4311,19 +4295,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
   }, [zoom, offset, clampOffset]);
 
   // Touch handlers for mobile
-  const getTouchDistance = useCallback((touch1: React.Touch, touch2: React.Touch) => {
-    const dx = touch1.clientX - touch2.clientX;
-    const dy = touch1.clientY - touch2.clientY;
-    return Math.sqrt(dx * dx + dy * dy);
-  }, []);
-
-  const getTouchCenter = useCallback((touch1: React.Touch, touch2: React.Touch) => {
-    return {
-      x: (touch1.clientX + touch2.clientX) / 2,
-      y: (touch1.clientY + touch2.clientY) / 2,
-    };
-  }, []);
-
+  // Uses extracted utility functions from cameraUtils.ts (getTouchDistance, getTouchCenter)
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     if (e.touches.length === 1) {
       // Single touch - could be pan or tap
@@ -4341,7 +4313,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       setIsPanning(false);
       isPinchZoomingRef.current = true;
     }
-  }, [offset, zoom, getTouchDistance, getTouchCenter]);
+  }, [offset, zoom]);
 
   const handleTouchMove = useCallback((e: React.TouchEvent) => {
     e.preventDefault();
@@ -4390,7 +4362,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         lastTouchCenterRef.current = currentCenter;
       }
     }
-  }, [isPanning, dragStart, zoom, offset, clampOffset, getTouchDistance, getTouchCenter]);
+  }, [isPanning, dragStart, zoom, offset, clampOffset]);
 
   const handleTouchEnd = useCallback((e: React.TouchEvent) => {
     const touchStart = touchStartRef.current;
