@@ -290,11 +290,6 @@ export const Sidebar = React.memo(function Sidebar({ onExit }: { onExit?: () => 
   
   // Submenu categories (hover to expand) - includes all new assets from main
   const submenuCategories = useMemo(() => [
-    {
-      key: 'zoning',
-      label: 'Zoning',
-      tools: ['zone_dezone', 'zone_water'] as Tool[]
-    },
     { 
       key: 'services', 
       label: 'Services', 
@@ -416,6 +411,19 @@ export const Sidebar = React.memo(function Sidebar({ onExit }: { onExit?: () => 
                 );
               })}
             </div>
+
+            {/* Zoning dropdown directly under Zones */}
+            {category === 'ZONES' && (
+              <div className="px-2 flex flex-col gap-0.5 mt-1">
+                <HoverSubmenu
+                  label="Zoning"
+                  tools={['zone_dezone', 'zone_water'] as Tool[]}
+                  selectedTool={selectedTool}
+                  money={stats.money}
+                  onSelectTool={setTool}
+                />
+              </div>
+            )}
           </div>
         ))}
         
