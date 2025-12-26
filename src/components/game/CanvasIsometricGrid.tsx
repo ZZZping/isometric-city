@@ -67,6 +67,7 @@ import {
   OVERLAY_CIRCLE_FILL_COLORS,
   OVERLAY_HIGHLIGHT_COLORS,
 } from '@/components/game/overlays';
+import { getAmbientColor, getDarkness, pseudoRandom } from '@/components/game/lightingUtils';
 import { SERVICE_CONFIG } from '@/lib/simulation';
 import { drawPlaceholderBuilding } from '@/components/game/placeholders';
 import { loadImage, loadSpriteImage, onImageLoaded, getCachedImage } from '@/components/game/imageLoader';
@@ -3709,13 +3710,6 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     
     // Calculate darkness based on visualHour (0-23)
     // Dawn: 5-7, Day: 7-18, Dusk: 18-20, Night: 20-5
-    const getDarkness = (h: number): number => {
-      if (h >= 7 && h < 18) return 0; // Full daylight
-      if (h >= 5 && h < 7) return 1 - (h - 5) / 2; // Dawn transition
-      if (h >= 18 && h < 20) return (h - 18) / 2; // Dusk transition
-      return 1; // Night
-    };
-    
     const darkness = getDarkness(visualHour);
     
     // Clear canvas first
@@ -3726,19 +3720,6 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     if (darkness <= 0.01) return;
     
     // Get ambient color based on time
-    const getAmbientColor = (h: number): { r: number; g: number; b: number } => {
-      if (h >= 7 && h < 18) return { r: 255, g: 255, b: 255 };
-      if (h >= 5 && h < 7) {
-        const t = (h - 5) / 2;
-        return { r: Math.round(60 + 40 * t), g: Math.round(40 + 30 * t), b: Math.round(70 + 20 * t) };
-      }
-      if (h >= 18 && h < 20) {
-        const t = (h - 18) / 2;
-        return { r: Math.round(100 - 40 * t), g: Math.round(70 - 30 * t), b: Math.round(90 - 20 * t) };
-      }
-      return { r: 20, g: 30, b: 60 };
-    };
-    
     const ambient = getAmbientColor(visualHour);
     
     // Apply darkness overlay
@@ -3760,18 +3741,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     const visibleMinSum = Math.max(0, Math.floor((viewTop - TILE_HEIGHT * 6) * 2 / TILE_HEIGHT));
     const visibleMaxSum = Math.min(gridSize * 2 - 2, Math.ceil((viewBottom + TILE_HEIGHT) * 2 / TILE_HEIGHT));
     
-    const gridToScreen = (gx: number, gy: number) => ({
-      screenX: (gx - gy) * TILE_WIDTH / 2,
-      screenY: (gx + gy) * TILE_HEIGHT / 2,
-    });
-    
     const lightIntensity = Math.min(1, darkness * 1.3);
-    
-    // Pre-calculate pseudo-random function
-    const pseudoRandom = (seed: number, n: number) => {
-      const s = Math.sin(seed + n * 12.9898) * 43758.5453;
-      return s - Math.floor(s);
-    };
     
     // Set for building types that are not lit
     // PERF: Use pre-computed module-level sets for O(1) lookups (avoid allocation per render)
@@ -3794,7 +3764,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         const y = sum - x;
         if (y < 0 || y >= gridSize) continue;
         
-        const { screenX, screenY } = gridToScreen(x, y);
+        const { screenX, screenY } = gridToScreen(x, y, 0, 0);
         
         // Viewport culling for horizontal bounds
         if (screenX + TILE_WIDTH < viewLeft || screenX > viewRight ||
@@ -3833,7 +3803,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     ctx.translate(offset.x / zoom, offset.y / zoom);
     
     for (const light of lightCutouts) {
-      const { screenX, screenY } = gridToScreen(light.x, light.y);
+      const { screenX, screenY } = gridToScreen(light.x, light.y, 0, 0);
       const tileCenterX = screenX + TILE_WIDTH / 2;
       const tileCenterY = screenY + TILE_HEIGHT / 2;
       
@@ -3906,7 +3876,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     ctx.translate(offset.x / zoom, offset.y / zoom);
     
     for (const glow of coloredGlows) {
-      const { screenX, screenY } = gridToScreen(glow.x, glow.y);
+      const { screenX, screenY } = gridToScreen(glow.x, glow.y, 0, 0);
       const tileCenterX = screenX + TILE_WIDTH / 2;
       const tileCenterY = screenY + TILE_HEIGHT / 2;
       
