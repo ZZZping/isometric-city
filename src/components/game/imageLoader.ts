@@ -11,6 +11,32 @@ const COLOR_THRESHOLD = 155; // Adjust this value to be more/less aggressive
 // Image cache for building sprites
 const imageCache = new Map<string, HTMLImageElement>();
 
+function getOptimizedSrcCandidates(src: string): string[] {
+  // Try modern formats first, then fall back to the original path.
+  // We avoid any upfront feature-detection and instead rely on a fast network fallback:
+  // - If the browser can decode WebP and the file exists, it loads.
+  // - Otherwise it 404s / errors quickly and we retry the original (PNG).
+  const trimmed = src.trim();
+  if (!trimmed) return [src];
+
+  // Only attempt extension swaps for common static image URLs.
+  // This is intentionally conservative to avoid breaking data URLs, blobs, etc.
+  const lower = trimmed.toLowerCase();
+  if (lower.startsWith('data:') || lower.startsWith('blob:')) return [src];
+
+  // Preserve any query/hash suffix.
+  const match = trimmed.match(/^([^?#]+)([?#].*)?$/);
+  const pathPart = match?.[1] ?? trimmed;
+  const suffix = match?.[2] ?? '';
+
+  if (pathPart.toLowerCase().endsWith('.png')) {
+    const webp = `${pathPart.slice(0, -4)}.webp${suffix}`;
+    return [webp, src];
+  }
+
+  return [src];
+}
+
 // Event emitter for image loading progress (to trigger re-renders)
 type ImageLoadCallback = () => void;
 const imageLoadCallbacks = new Set<ImageLoadCallback>();
@@ -42,14 +68,56 @@ export function loadImage(src: string): Promise<HTMLImageElement> {
   }
   
   return new Promise((resolve, reject) => {
+    const candidates = getOptimizedSrcCandidates(src);
+    let candidateIdx = 0;
+
     const img = new Image();
-    img.onload = () => {
+    img.decoding = 'async';
+
+    // Hint to de-prioritize non-critical images when the browser supports it.
+    // (Most sprite sheets are loaded progressively in the background.)
+    try {
+      (img as unknown as { fetchPriority?: 'high' | 'low' | 'auto' }).fetchPriority = 'low';
+    } catch {
+      // ignore
+    }
+
+    const tryNextCandidate = () => {
+      const next = candidates[candidateIdx++];
+      if (!next) return false;
+      img.src = next;
+      return true;
+    };
+
+    img.onload = async () => {
+      // Ensure the image is decoded off the main thread when possible,
+      // so the first draw doesn't block rendering.
+      try {
+        await img.decode();
+      } catch {
+        // Some browsers throw for cross-origin / already-decoded images; safe to ignore.
+      }
+
+      // Cache by the original requested key and also by the actual resolved src.
       imageCache.set(src, img);
+      if (img.src && img.src !== src) {
+        imageCache.set(img.src, img);
+      }
       notifyImageLoaded(); // Notify listeners that a new image is available
       resolve(img);
     };
-    img.onerror = reject;
-    img.src = src;
+
+    img.onerror = () => {
+      // If WebP is missing/unsupported, fall back to original PNG (or other candidate).
+      if (candidateIdx < candidates.length) {
+        if (tryNextCandidate()) return;
+      }
+      reject(new Error(`Failed to load image: ${src}`));
+    };
+
+    if (!tryNextCandidate()) {
+      reject(new Error(`Invalid image src: ${src}`));
+    }
   });
 }
 
@@ -62,12 +130,6 @@ export function loadImage(src: string): Promise<HTMLImageElement> {
 export function filterBackgroundColor(img: HTMLImageElement, threshold: number = COLOR_THRESHOLD): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     try {
-      console.log('Starting background color filtering...', { 
-        imageSize: `${img.naturalWidth || img.width}x${img.naturalHeight || img.height}`,
-        threshold,
-        backgroundColor: BACKGROUND_COLOR
-      });
-      
       const canvas = document.createElement('canvas');
       canvas.width = img.naturalWidth || img.width;
       canvas.height = img.naturalHeight || img.height;
@@ -85,10 +147,7 @@ export function filterBackgroundColor(img: HTMLImageElement, threshold: number =
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       const data = imageData.data;
       
-      console.log(`Processing ${data.length / 4} pixels...`);
-      
       // Process each pixel
-      let filteredCount = 0;
       for (let i = 0; i < data.length; i += 4) {
         const r = data[i];
         const g = data[i + 1];
@@ -104,29 +163,38 @@ export function filterBackgroundColor(img: HTMLImageElement, threshold: number =
         // If the color is close to the background color, make it transparent
         if (distance <= threshold) {
           data[i + 3] = 0; // Set alpha to 0 (transparent)
-          filteredCount++;
         }
       }
-      
-      // Debug: log filtering results
-      const totalPixels = data.length / 4;
-      const percentage = filteredCount > 0 ? ((filteredCount / totalPixels) * 100).toFixed(2) : '0.00';
-      console.log(`Filtered ${filteredCount} pixels (${percentage}%) from sprite sheet`);
       
       // Put the modified image data back
       ctx.putImageData(imageData, 0, 0);
       
       // Create a new image from the processed canvas
       const filteredImg = new Image();
-      filteredImg.onload = () => {
-        console.log('Filtered image created successfully');
-        resolve(filteredImg);
-      };
-      filteredImg.onerror = (error) => {
-        console.error('Failed to create filtered image:', error);
-        reject(new Error('Failed to create filtered image'));
-      };
-      filteredImg.src = canvas.toDataURL();
+      filteredImg.decoding = 'async';
+
+      // Prefer toBlob + objectURL to avoid huge base64 strings and reduce memory pressure.
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          reject(new Error('Failed to create filtered image blob'));
+          return;
+        }
+        const url = URL.createObjectURL(blob);
+        filteredImg.onload = async () => {
+          URL.revokeObjectURL(url);
+          try {
+            await filteredImg.decode();
+          } catch {
+            // ignore
+          }
+          resolve(filteredImg);
+        };
+        filteredImg.onerror = () => {
+          URL.revokeObjectURL(url);
+          reject(new Error('Failed to create filtered image'));
+        };
+        filteredImg.src = url;
+      });
     } catch (error) {
       reject(error);
     }

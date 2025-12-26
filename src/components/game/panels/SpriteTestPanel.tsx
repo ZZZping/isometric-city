@@ -5,6 +5,7 @@ import { useGame } from '@/context/GameContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { getSpriteCoords } from '@/lib/renderConfig';
+import { loadImage } from '@/components/game/imageLoader';
 
 export function SpriteTestPanel({ onClose }: { onClose: () => void }) {
   const { currentSpritePack } = useGame();
@@ -27,18 +28,13 @@ export function SpriteTestPanel({ onClose }: { onClose: () => void }) {
         setSpriteSheets(prev => ({ ...prev, [key]: null }));
         return Promise.resolve();
       }
-      return new Promise((resolve) => {
-        const img = new Image();
-        img.onload = () => {
+      return loadImage(src)
+        .then((img) => {
           setSpriteSheets(prev => ({ ...prev, [key]: img }));
-          resolve();
-        };
-        img.onerror = () => {
+        })
+        .catch(() => {
           setSpriteSheets(prev => ({ ...prev, [key]: null }));
-          resolve();
-        };
-        img.src = src;
-      });
+        });
     };
     
     Promise.all([

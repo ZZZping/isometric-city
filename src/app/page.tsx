@@ -7,6 +7,7 @@ import Game from '@/components/Game';
 import { useMobile } from '@/hooks/useMobile';
 import { getSpritePack, getSpriteCoords, DEFAULT_SPRITE_PACK_ID } from '@/lib/renderConfig';
 import { SavedCityMeta } from '@/types/game';
+import { loadImage } from '@/components/game/imageLoader';
 
 const STORAGE_KEY = 'isocity-game-state';
 const SAVED_CITIES_INDEX_KEY = 'isocity-saved-cities-index';
@@ -110,12 +111,17 @@ function SpriteGallery({ count = 16, cols = 4, cellSize = 120 }: { count?: numbe
   
   // Load and filter sprite sheet
   useEffect(() => {
-    const img = new Image();
-    img.onload = () => {
-      const filtered = filterBackgroundColor(img);
-      setFilteredSheet(filtered);
-    };
-    img.src = spritePack.src;
+    let cancelled = false;
+    loadImage(spritePack.src)
+      .then((img) => {
+        if (cancelled) return;
+        const filtered = filterBackgroundColor(img);
+        setFilteredSheet(filtered);
+      })
+      .catch(() => {
+        // ignore - gallery is non-critical
+      });
+    return () => { cancelled = true; };
   }, [spritePack.src]);
   
   // Pre-compute sprite data with valid coords
